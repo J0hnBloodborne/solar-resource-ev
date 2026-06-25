@@ -14,7 +14,8 @@ from solarpredict.viz import city_ghi_map, city_ranking_bar, seasonal_ghi_lines
 
 REPORTS = Path("reports")
 FIGDIR = REPORTS / "figures"
-HIGHLIGHT = ("Quetta", "Peshawar")  # sunniest and least-sunny endpoints
+# the two cities above Karachi on solar yield (untapped, higher-solar candidates)
+HIGHLIGHT = ("Quetta", "Gilgit")
 
 
 def main() -> None:
@@ -35,7 +36,7 @@ def main() -> None:
     seasonal_ghi_lines(
         monthly,
         path=FIGDIR / "fig3_seasonal.png",
-        cities=("Quetta", "Gilgit", "Karachi", "Peshawar"),
+        cities=("Quetta", "Gilgit", "Karachi", "Lahore"),
     )
     print(f"figures written to {FIGDIR}")
 
