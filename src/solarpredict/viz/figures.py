@@ -120,3 +120,84 @@ def data_efficiency_lines(
     ax.grid(alpha=0.3)
     ax.legend(fontsize=8)
     return _save(fig, path)
+
+
+def city_ranking_bar(
+    summary: pd.DataFrame,
+    *,
+    path: str | Path,
+    value: str = "annual_kwh_m2",
+    highlight: tuple[str, ...] = (),
+) -> Path:
+    """Bar chart of cities by solar yield; highlighted cities are coloured red."""
+    ranked = summary.sort_values(value, ascending=False)
+    chosen = set(highlight)
+    colors = ["#d62728" if c in chosen else "#1f77b4" for c in ranked["city"]]
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    bars = ax.bar(ranked["city"], ranked[value], color=colors)
+    ax.set_ylabel("Annual GHI yield (kWh/m$^2$/yr)")
+    ax.set_xlabel("City")
+    ax.set_title("Solar resource by city (5-year mean)")
+    ax.tick_params(axis="x", rotation=45)
+    for bar, val in zip(bars, ranked[value], strict=True):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            val,
+            f"{val:.0f}",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+        )
+    return _save(fig, path)
+
+
+def city_ghi_map(
+    summary: pd.DataFrame, *, path: str | Path, highlight: tuple[str, ...] = ()
+) -> Path:
+    """Geographic scatter of cities (lon/lat) coloured by annual GHI yield."""
+    chosen = set(highlight)
+    fig, ax = plt.subplots(figsize=(8, 7))
+    scatter = ax.scatter(
+        summary["longitude"],
+        summary["latitude"],
+        c=summary["annual_kwh_m2"],
+        s=220,
+        cmap="YlOrRd",
+        edgecolor="black",
+        zorder=3,
+    )
+    for _, row in summary.iterrows():
+        weight = "bold" if row["city"] in chosen else "normal"
+        ax.annotate(
+            f"{row['city']}\n{row['annual_kwh_m2']:.0f}",
+            (row["longitude"], row["latitude"]),
+            textcoords="offset points",
+            xytext=(7, 6),
+            fontsize=8,
+            fontweight=weight,
+        )
+    fig.colorbar(scatter, ax=ax, label="Annual GHI yield (kWh/m$^2$/yr)")
+    ax.set_xlabel("Longitude")
+    ax.set_ylabel("Latitude")
+    ax.set_title("Solar resource across Pakistani cities")
+    ax.grid(alpha=0.2)
+    return _save(fig, path)
+
+
+def seasonal_ghi_lines(
+    monthly: pd.DataFrame, *, path: str | Path, cities: tuple[str, ...] | None = None
+) -> Path:
+    """Mean daytime GHI by month, one line per city."""
+    names = cities if cities is not None else tuple(monthly["city"].unique())
+    fig, ax = plt.subplots(figsize=(8, 5))
+    for city in names:
+        sub = monthly[monthly["city"] == city].sort_values("month")
+        ax.plot(sub["month"], sub["ghi_day"], marker="o", label=city)
+    ax.set_xlabel("Month")
+    ax.set_ylabel("Mean daytime GHI (W/m$^2$)")
+    ax.set_title("Seasonal GHI by city")
+    ax.set_xticks(range(1, 13))
+    ax.grid(alpha=0.3)
+    ax.legend(fontsize=8)
+    return _save(fig, path)
