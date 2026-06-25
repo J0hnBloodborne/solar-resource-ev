@@ -84,6 +84,44 @@ def intracity_sites(*cities: str) -> list[Location]:
     return sites
 
 
+@dataclass(frozen=True)
+class BBox:
+    """Geographic bounding box (degrees)."""
+
+    lat_min: float
+    lat_max: float
+    lon_min: float
+    lon_max: float
+
+
+# Metro bounding boxes for the Part B GHI grid / heatmap.
+CITY_BBOX: dict[str, BBox] = {
+    "Karachi": BBox(24.78, 25.10, 66.95, 67.27),
+    "Lahore": BBox(31.25, 31.65, 74.18, 74.60),
+}
+
+
+def _frange(low: float, high: float, step: float) -> list[float]:
+    # Floor-based count so points stay within [low, high].
+    count = int((high - low) / step + 1e-9) + 1
+    return [round(low + i * step, 4) for i in range(count)]
+
+
+def city_grid(city: str, step_deg: float = 0.07) -> list[Location]:
+    """Regular ~``step_deg`` grid over a city's bbox (feeds the GHI heatmap, GHI-only).
+
+    ERA5(-Land) is ~9 km, so ~0.07 deg (~7 km) resolves the metro into its distinct
+    cells (Karachi -> ~16) without over-sampling. The named districts in
+    ``INTRACITY_SITES`` are mapped onto these for human-readable recommendations.
+    """
+    bbox = CITY_BBOX[city]
+    points: list[Location] = []
+    for lat in _frange(bbox.lat_min, bbox.lat_max, step_deg):
+        for lon in _frange(bbox.lon_min, bbox.lon_max, step_deg):
+            points.append(Location(f"grid {lat} {lon}", lat, lon, city=city))
+    return points
+
+
 # Hourly variables requested from Open-Meteo. shortwave_radiation is GHI (W/m^2);
 # the radiation components (direct/dni/diffuse) are NOT used as t+1 features
 # (deterministic parts of the target — see leakage discipline in the plan).

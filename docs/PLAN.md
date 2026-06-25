@@ -144,8 +144,10 @@ smart persistence.
   still stands on Tiers 0–2 with NHITS covering the "modern AI" claim.
 
 ### Part B — Site suitability ranking & charging-station siting
-- For the **data-chosen city**, sample **N candidate sites** (coordinates across the city),
-  pull multi-year hourly GHI for each.
+- **Data-chosen city: Karachi** (resolves into ~16 ERA5 cells, ~3.3% intra-city GHI spread,
+  coastal→inland; beats Lahore's 1.4%). Sample a **~7 km grid** over the metro (`city_grid`)
+  for the GHI heatmap + spread, and map the **named districts** (Clifton, Gadap, …) onto it
+  for the recommended-sites labels. GHI-only for the grid (cheap); GHI+temp for the index.
 - Compute a **solar-suitability score** per site per season — a transparent weighted index
   over mean/seasonal GHI, PSH, low-irradiance (cloud) penalty, and inter-day consistency.
   (Explainable, no black box.)

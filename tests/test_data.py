@@ -40,6 +40,19 @@ def test_default_date_range_spans_years() -> None:
     assert 3 * 360 <= (end - start).days <= 3 * 370
 
 
+def test_city_grid_covers_bbox() -> None:
+    from solarpredict.config.sites import CITY_BBOX, city_grid
+
+    pts = city_grid("Karachi", step_deg=0.07)
+    bbox = CITY_BBOX["Karachi"]
+    assert len(pts) >= 16
+    assert len({p.slug for p in pts}) == len(pts)  # unique slugs
+    for p in pts:
+        assert bbox.lat_min - 1e-6 <= p.latitude <= bbox.lat_max + 1e-6
+        assert bbox.lon_min - 1e-6 <= p.longitude <= bbox.lon_max + 1e-6
+        assert p.city == "Karachi"
+
+
 def test_default_targets_include_cities_and_sites() -> None:
     targets = default_ingest_targets()
     slugs = {t.slug for t in targets}
