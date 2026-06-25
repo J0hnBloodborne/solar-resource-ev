@@ -1,7 +1,12 @@
-"""Feature engineering (lags, rolling stats, cyclical time, clear-sky index).
+"""Feature engineering: solar geometry, clear-sky index, and site preparation.
 
-Populated in M1/M2. Kept as a package so the supervised-table builder used by the
-classical-ML adapters has a stable home.
+Lag/rolling/cyclical features for the classical-ML tier land in M2; this module
+provides the clear-sky foundation the skill-score spine needs.
 """
 
 from __future__ import annotations
+
+from .clearsky import clear_sky_index, daytime_mask, solar_geometry
+from .prepare import prepare_site
+
+__all__ = ["clear_sky_index", "daytime_mask", "prepare_site", "solar_geometry"]
