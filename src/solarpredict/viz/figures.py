@@ -260,3 +260,68 @@ def ev_locations_map(
     ax.set_title(f"Recommended solar-EV charging sites — {city} (top {top} starred)")
     ax.grid(alpha=0.2)
     return _save(fig, path)
+
+
+def ghi_heatmap_hour_month(
+    df: pd.DataFrame,
+    *,
+    path: str | Path,
+    ghi_col: str = "y",
+    time_col: str = "ds",
+    tz: str = "Asia/Karachi",
+    title: str = "GHI heatmap — local hour of day vs month (Karachi)",
+) -> Path:
+    """2-D heatmap of mean GHI by local hour-of-day (y) and month (x)."""
+    ts = pd.DatetimeIndex(df[time_col])
+    ts = (ts.tz_localize("UTC") if ts.tz is None else ts).tz_convert(tz)
+    grid = (
+        pd.DataFrame(
+            {"hour": ts.hour, "month": ts.month, "ghi": df[ghi_col].to_numpy(float)}
+        )
+        .pivot_table(index="hour", columns="month", values="ghi", aggfunc="mean")
+        .sort_index()
+    )
+    fig, ax = plt.subplots(figsize=(8, 6))
+    image = ax.imshow(
+        grid.to_numpy(),
+        aspect="auto",
+        origin="lower",
+        cmap="inferno",
+        extent=(0.5, 12.5, -0.5, 23.5),
+    )
+    fig.colorbar(image, ax=ax, label="Mean GHI (W/m$^2$)")
+    ax.set_xlabel("Month")
+    ax.set_ylabel("Hour of day (PKT)")
+    ax.set_title(title)
+    ax.set_xticks(range(1, 13))
+    return _save(fig, path)
+
+
+def daily_ghi_profile(
+    df: pd.DataFrame,
+    *,
+    path: str | Path,
+    ghi_col: str = "y",
+    time_col: str = "ds",
+    tz: str = "Asia/Karachi",
+    title: str = "Mean daily GHI and PV potential (Karachi)",
+) -> Path:
+    """Average GHI by local hour of day, with a PV-power axis (kW per kW-peak)."""
+    ts = pd.DatetimeIndex(df[time_col])
+    ts = (ts.tz_localize("UTC") if ts.tz is None else ts).tz_convert(tz)
+    profile = pd.Series(df[ghi_col].to_numpy(float)).groupby(ts.hour).mean()
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(profile.index, profile.to_numpy(), marker="o", color="#d62728")
+    ax.fill_between(profile.index, profile.to_numpy(), alpha=0.2, color="#d62728")
+    ax.set_xlabel("Hour of day (PKT)")
+    ax.set_ylabel("Mean GHI (W/m$^2$)")
+    ax.set_title(title)
+    ax.set_xticks(range(0, 24, 2))
+    ax.grid(alpha=0.3)
+
+    low, high = ax.get_ylim()
+    power = ax.twinx()
+    power.set_ylim(low / 1000.0, high / 1000.0)  # power ~ GHI/1000 for a 1 kWp panel
+    power.set_ylabel("PV power (kW per kW-peak)")
+    return _save(fig, path)

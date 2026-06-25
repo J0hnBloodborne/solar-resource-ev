@@ -5,9 +5,11 @@ from __future__ import annotations
 from .figures import (
     city_ghi_map,
     city_ranking_bar,
+    daily_ghi_profile,
     data_efficiency_lines,
     ev_locations_map,
     feature_importance,
+    ghi_heatmap_hour_month,
     model_comparison_bar,
     predicted_vs_actual,
     seasonal_ghi_lines,
@@ -17,9 +19,11 @@ from .figures import (
 __all__ = [
     "city_ghi_map",
     "city_ranking_bar",
+    "daily_ghi_profile",
     "data_efficiency_lines",
     "ev_locations_map",
     "feature_importance",
+    "ghi_heatmap_hour_month",
     "model_comparison_bar",
     "predicted_vs_actual",
     "seasonal_ghi_lines",
