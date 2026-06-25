@@ -1,12 +1,15 @@
-"""Feature engineering: solar geometry, clear-sky index, and site preparation.
-
-Lag/rolling/cyclical features for the classical-ML tier land in M2; this module
-provides the clear-sky foundation the skill-score spine needs.
-"""
+"""Feature engineering: solar geometry, clear-sky index, site prep, tabular features."""
 
 from __future__ import annotations
 
 from .clearsky import clear_sky_index, daytime_mask, solar_geometry
 from .prepare import prepare_site
+from .tabular import build_features
 
-__all__ = ["clear_sky_index", "daytime_mask", "prepare_site", "solar_geometry"]
+__all__ = [
+    "build_features",
+    "clear_sky_index",
+    "daytime_mask",
+    "prepare_site",
+    "solar_geometry",
+]

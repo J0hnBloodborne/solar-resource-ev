@@ -8,7 +8,7 @@ and import it below (or rely on the explicit imports) — no edits to shared cod
 from __future__ import annotations
 
 # Import built-in model modules for their registration side effects.
-from . import baselines  # noqa: F401  (registers tier-0 baselines)
+from . import baselines, classical  # noqa: F401  (register tier-0/tier-1 models)
 from .base import ForecastData, Forecaster
 from .registry import get_forecaster, list_forecasters, register
 
