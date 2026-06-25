@@ -325,3 +325,21 @@ def daily_ghi_profile(
     power.set_ylim(low / 1000.0, high / 1000.0)  # power ~ GHI/1000 for a 1 kWp panel
     power.set_ylabel("PV power (kW per kW-peak)")
     return _save(fig, path)
+
+
+def grid_ghi_heatmap(
+    grid: pd.DataFrame, *, path: str | Path, city: str = "Karachi"
+) -> Path:
+    """2-D heatmap of mean daytime GHI across a city's ~7 km sampling grid."""
+    pivot = grid.pivot_table(
+        index="latitude", columns="longitude", values="mean_ghi_day"
+    )
+    fig, ax = plt.subplots(figsize=(8, 7))
+    mesh = ax.pcolormesh(
+        pivot.columns, pivot.index, pivot.to_numpy(), cmap="YlOrRd", shading="auto"
+    )
+    fig.colorbar(mesh, ax=ax, label="Mean daytime GHI (W/m$^2$)")
+    ax.set_xlabel("Longitude")
+    ax.set_ylabel("Latitude")
+    ax.set_title(f"Intra-city GHI gradient — {city} (~7 km grid)")
+    return _save(fig, path)
