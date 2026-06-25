@@ -1,7 +1,7 @@
-"""Solar physics: GHI -> power conversion (pvlib PVWatts) and PSH.
-
-Populated in M5/M6. Reuses the linear STC scaling from S2Cool's math_model plus a
-fixed PV system per site so power-domain error is reproducible.
-"""
+"""Solar physics: GHI -> power conversion and peak sun hours."""
 
 from __future__ import annotations
+
+from .power import annual_energy_kwh_per_m2, ghi_to_power_kw, peak_sun_hours
+
+__all__ = ["annual_energy_kwh_per_m2", "ghi_to_power_kw", "peak_sun_hours"]

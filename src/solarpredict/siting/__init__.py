@@ -8,6 +8,7 @@ from .selection import (
     select_city,
     site_mean_ghi,
 )
+from .suitability import site_suitability
 
 __all__ = [
     "REFERENCE_YIELDS",
@@ -16,4 +17,5 @@ __all__ = [
     "rank_cities_by_intracity_spread",
     "select_city",
     "site_mean_ghi",
+    "site_suitability",
 ]

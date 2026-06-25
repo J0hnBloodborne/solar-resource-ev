@@ -201,3 +201,62 @@ def seasonal_ghi_lines(
     ax.grid(alpha=0.3)
     ax.legend(fontsize=8)
     return _save(fig, path)
+
+
+def _yellow_red(values: np.ndarray) -> np.ndarray:
+    span = float(values.max() - values.min())
+    frac = 0.35 + 0.55 * (
+        (values - values.min()) / span if span > 0 else np.full_like(values, 0.5)
+    )
+    return plt.get_cmap("YlOrRd")(frac)
+
+
+def site_suitability_bar(
+    df: pd.DataFrame, *, path: str | Path, city: str = "Karachi"
+) -> Path:
+    """Bar chart of within-city sites by suitability score (best first)."""
+    ranked = df.sort_values("suitability", ascending=False)
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.bar(
+        ranked["site"],
+        ranked["suitability"],
+        color=_yellow_red(ranked["suitability"].to_numpy()),
+    )
+    ax.set_ylabel("Suitability score (0-1)")
+    ax.set_xlabel("Site")
+    ax.set_title(f"Solar-EV site suitability — {city}")
+    ax.tick_params(axis="x", rotation=45)
+    return _save(fig, path)
+
+
+def ev_locations_map(
+    df: pd.DataFrame, *, path: str | Path, city: str = "Karachi", top: int = 3
+) -> Path:
+    """Map of sites coloured by suitability; top-N starred as recommended."""
+    ranked = df.sort_values("suitability", ascending=False).reset_index(drop=True)
+    fig, ax = plt.subplots(figsize=(8, 7))
+    scatter = ax.scatter(
+        ranked["longitude"],
+        ranked["latitude"],
+        c=ranked["suitability"],
+        s=260,
+        cmap="YlOrRd",
+        edgecolor="black",
+        zorder=3,
+    )
+    for i, row in ranked.iterrows():
+        recommended = i < top
+        ax.annotate(
+            f"{'★ ' if recommended else ''}{row['site']}",
+            (row["longitude"], row["latitude"]),
+            textcoords="offset points",
+            xytext=(7, 5),
+            fontsize=9,
+            fontweight="bold" if recommended else "normal",
+        )
+    fig.colorbar(scatter, ax=ax, label="Suitability score")
+    ax.set_xlabel("Longitude")
+    ax.set_ylabel("Latitude")
+    ax.set_title(f"Recommended solar-EV charging sites — {city} (top {top} starred)")
+    ax.grid(alpha=0.2)
+    return _save(fig, path)
