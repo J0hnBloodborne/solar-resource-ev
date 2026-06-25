@@ -102,3 +102,21 @@ def feature_importance(
     ax.set_xlabel("Importance")
     ax.set_title("Feature importance — best model")
     return _save(fig, path)
+
+
+def data_efficiency_lines(
+    df: pd.DataFrame, *, path: str | Path, metric: str = "skill"
+) -> Path:
+    """Line chart of ``metric`` vs training-set size, one line per model."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+    for model in df["model"].unique():
+        sub = df[df["model"] == model].sort_values("train_years")
+        ax.plot(sub["train_years"], sub[metric], marker="o", label=model)
+    ax.set_xlabel("Training data (years)")
+    ax.set_ylabel("Forecast skill score" if metric == "skill" else metric.upper())
+    ax.set_title(
+        "Data efficiency — accuracy vs training-set size (Karachi, fixed test)"
+    )
+    ax.grid(alpha=0.3)
+    ax.legend(fontsize=8)
+    return _save(fig, path)
