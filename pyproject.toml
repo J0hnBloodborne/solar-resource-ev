@@ -31,8 +31,9 @@ dependencies = [
 # Tier 0/1 classical + statistical models (statsmodels for SARIMAX — supports
 # numpy 2, unlike statsforecast which pins numpy<2 and breaks the venv)
 classical = ["xgboost", "lightgbm", "catboost", "statsmodels"]
-# Tier 2 deep learning (torch already present in the venv — do not reinstall it)
-dl = ["neuralforecast", "pytorch-lightning"]
+# Tier 2 deep learning (torch already present in the venv — do not reinstall it;
+# ray is required by neuralforecast at import time)
+dl = ["neuralforecast", "pytorch-lightning", "ray[tune]"]
 # Tier 3 foundation models (transformers already present in the venv)
 fm = ["chronos-forecasting>=2.0"]
 # Open-Meteo ingestion (M1) — official client + caching + backoff

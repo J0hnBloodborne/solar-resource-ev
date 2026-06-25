@@ -1,8 +1,10 @@
 """The benchmark harness: fit each model, score on test, report skill vs reference.
 
-Every model in the registry is scored identically here — masked to daytime, with a
-forecast skill score against smart (clear-sky) persistence. This is the single
-place metrics are computed, so the tiers stay comparable.
+Every model is scored identically here — daytime-masked, with a forecast skill
+score against smart (clear-sky) persistence. Each model receives the test rows
+*preceded by a context window* of history, so sequence models (LSTM, Chronos) can
+form their inputs; only the test portion is scored. Tabular/baseline models simply
+predict on every row and we slice to the test portion.
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from .metrics import mae, mbe, nrmse, r2, rmse, skill_score
 from .split import Split, chronological_split
 
 DEFAULT_BASELINES = ("persistence", "smart_persistence", "climatology")
+CONTEXT_ROWS = 168  # 1 week of history prepended to the test window
 
 
 def evaluate(
@@ -28,21 +31,29 @@ def evaluate(
     reference: str = "smart_persistence",
     covariate_cols: tuple[str, ...] = (),
     day_mask_col: str = "is_day",
+    target: str = "y",
+    context: int = CONTEXT_ROWS,
 ) -> pd.DataFrame:
-    """Fit/score each model on a prepared frame; return a metrics table.
+    """Fit/score each model; return a metrics table sorted by RMSE.
 
     Columns: model, tier, mae, rmse, r2, nrmse, mbe, skill (vs ``reference``).
-    Metrics are computed over daytime rows only (``day_mask_col``).
+    Metrics use daytime rows only (``day_mask_col``).
     """
+    ordered = prepared.sort_values("ds").reset_index(drop=True)
     if split is None:
-        split = chronological_split(prepared)
+        split = chronological_split(ordered)
+
+    n_test = len(split.test)
+    i_test = len(ordered) - n_test
+    test_ctx = ordered.iloc[max(0, i_test - context) :].reset_index(drop=True)
 
     train_data = ForecastData(frame=split.train, covariate_cols=covariate_cols)
-    test_data = ForecastData(frame=split.test, covariate_cols=covariate_cols)
-    y_true = test_data.y
+    test_data = ForecastData(frame=test_ctx, covariate_cols=covariate_cols)
+
+    y_true = test_ctx[target].to_numpy(dtype=float)[-n_test:]
     mask = (
-        split.test[day_mask_col].to_numpy(dtype=bool)
-        if day_mask_col in split.test.columns
+        test_ctx[day_mask_col].to_numpy(dtype=bool)[-n_test:]
+        if day_mask_col in test_ctx.columns
         else None
     )
 
@@ -55,7 +66,8 @@ def evaluate(
     for name in names:
         model = get_forecaster(name)
         model.fit(train_data)
-        preds[name] = model.predict(test_data)
+        full = np.asarray(model.predict(test_data), dtype=float)
+        preds[name] = full[-n_test:]  # score only the test portion
         tiers[name] = model.tier
 
     ref_rmse = rmse(y_true, preds[reference], mask)
