@@ -1,0 +1,9 @@
+# Code ownership for review routing. Replace the placeholder handles with the
+# team's GitHub usernames once the repo is on GitHub.
+#
+# *                       @team-lead
+# /src/solarpredict/data/ @data-owner
+# /src/solarpredict/models/ @models-owner
+# /src/solarpredict/siting/ @siting-owner
+# /src/solarpredict/viz/  @viz-owner
+# /.github/               @data-owner

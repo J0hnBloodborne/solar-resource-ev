@@ -1,0 +1,72 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "solarpredict"
+version = "0.1.0"
+description = "Solar resource prediction: a tiered ML/AI benchmark for hour-ahead GHI forecasting and solar-suitability site ranking."
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = { text = "MIT" }
+authors = [{ name = "FNF Petroleum / NUST team" }]
+keywords = ["solar", "GHI", "forecasting", "time-series", "machine-learning"]
+
+# Core runtime — intentionally light (no torch / heavy ML here so CI stays fast).
+# torch is provided by the project venv (F:\Documents\vit\vitvenv, torch 2.11+cu130)
+# and must NOT be reinstalled. Heavy tiers live in the optional groups below.
+dependencies = [
+    "numpy",
+    "pandas",
+    "pyarrow",
+    "scikit-learn",
+    "scipy",
+    "pvlib",
+    "pydantic>=2",
+    "pydantic-settings>=2",
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+# Tier 0/1 classical + statistical models
+classical = ["xgboost", "lightgbm", "catboost", "statsforecast"]
+# Tier 2 deep learning (torch already present in the venv — do not reinstall it)
+dl = ["neuralforecast", "pytorch-lightning"]
+# Tier 3 foundation models (transformers already present in the venv)
+fm = ["chronos-forecasting>=2.0"]
+# Open-Meteo ingestion (M1) — official client + caching + backoff
+ingest = ["openmeteo-requests", "requests-cache", "retry-requests"]
+# Figures
+viz = ["matplotlib", "plotly", "seaborn"]
+# Developer tooling
+dev = ["ruff", "mypy", "pytest", "pytest-cov", "pre-commit"]
+
+[project.scripts]
+solarpredict = "solarpredict.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/solarpredict"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+src = ["src", "tests", "pipelines"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF"]
+ignore = ["B008"]  # typer uses function-call defaults (Argument/Option) by design
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.mypy]
+python_version = "3.11"
+packages = ["solarpredict"]
+ignore_missing_imports = true   # most ML libs ship no type stubs
+warn_unused_ignores = true
+warn_redundant_casts = true
+disallow_untyped_defs = false   # pragmatic for research code; tighten later
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
