@@ -54,11 +54,17 @@ class ChronosForecaster(Forecaster):
                 hist = y[:1]
             inputs.append(torch.tensor(hist, dtype=torch.float32))
 
-        quantiles, _mean = pipe.predict_quantiles(  # type: ignore[attr-defined]
+        quantiles, _means = pipe.predict_quantiles(  # type: ignore[attr-defined]
             inputs, prediction_length=1, quantile_levels=[0.5]
         )
-        point = quantiles[:, 0, 0].to(dtype=torch.float32).cpu().numpy()
-        return np.clip(point.astype(float), 0.0, None)
+        # Bolt returns a stacked tensor [batch, h, q]; Chronos-2 a list of [h, q].
+        if isinstance(quantiles, list | tuple):
+            point = np.array(
+                [float(np.asarray(q.detach().cpu()).reshape(-1)[0]) for q in quantiles]
+            )
+        else:
+            point = np.asarray(quantiles.detach().cpu())[:, 0, 0].astype(float)
+        return np.clip(point, 0.0, None)
 
 
 @register("chronos2")
