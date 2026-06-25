@@ -214,13 +214,20 @@ abstraction lets us swap to Neon DB + HF sync later via repo secrets.
 
 Historical ingestion is fast and **not rate-limited at our scale** (Open-Meteo, verified):
 - **No API key**; free for non-commercial/educational. Limits: <600/min, <5,000/hr, <10,000/day.
-- The **Historical Archive (ERA5) API returns a full multi-year hourly series per location in
-  ONE request** → total requests ≈ number of sites, not days. ~10 sites = ~10 requests,
-  seconds-to-minutes. ERA5 has ~5-day latency (irrelevant for a historical benchmark).
-- Use the official **`openmeteo-requests`** client + **`requests-cache`** + **`retry-requests`**
-  (auto backoff); persist each location to **parquet**.
-- **How much data:** 1–2 years is the floor; since a longer range is the same number of
-  requests, grab **~3–5 years** (config default: `SOLARPREDICT_HISTORY_YEARS=5`).
+- The Historical Archive (ERA5) API serves multi-year hourly data, but Open-Meteo **weights
+  each request by range × variables** — a multi-year × 8-variable pull trips the **per-minute
+  limit in a single call** (confirmed in practice). So the repository **chunks by ~1 year**
+  and **backs off 60 s** on the minute limit (mirrors S2Cool's chunking). Still cheap overall
+  (well under 10k/day); a full multi-year, multi-site seed is a one-time, cached job.
+- Official **`openmeteo-requests`** client + **`requests-cache`** + **`retry-requests`**;
+  persist each location to **parquet** (keyed by site / range / variable-set).
+- ERA5 has ~5-day latency (irrelevant for a historical benchmark).
+- **How much data:** 1–2 years is the floor; default **~5 years**
+  (`SOLARPREDICT_HISTORY_YEARS=5`).
+- **Resolution caveat (Part B):** ERA5(-Land) is ~9–25 km. Live check confirmed Karachi's
+  named sites span **6 distinct cells** (2.6% GHI spread, coastal→inland) vs Lahore's 1.4% →
+  **Karachi is the data-chosen city**; intra-city differences are real but small, so the
+  suitability index blends GHI with PSH/seasonal/temperature and is framed in annual-energy.
 
 ## Milestones (dependency-ordered; ∥ = parallelizable)
 
