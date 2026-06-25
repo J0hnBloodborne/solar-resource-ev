@@ -14,17 +14,24 @@ Two contributions:
 - **Part B — siting:** rank sites within a data-chosen city by a transparent
   solar-suitability index and recommend charging-station locations.
 
-## Environment
+## Requirements
 
-This project uses the existing venv at **`F:\Documents\vit\vitvenv`**
-(Python 3.11, **torch 2.11+cu130**, CUDA 13.0, RTX 3070). Do **not** reinstall
-torch. Install the package editable into that venv:
+- **Python 3.11**
+- **PyTorch ≥ 2.x**, installed separately for your platform — a CUDA build is
+  recommended (the deep-learning and foundation-model tiers use the GPU; CPU also
+  works). The core install does **not** pull in torch, so it won't clobber an
+  existing CUDA build.
+
+## Setup
 
 ```powershell
-& F:\Documents\vit\vitvenv\Scripts\python.exe -m pip install -e ".[dev]"
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+# install PyTorch for your platform first: https://pytorch.org/get-started/locally/
+pip install -e ".[dev]"
 ```
 
-Add tier dependencies as you reach each milestone:
+Pull in each tier's dependencies as you reach its milestone:
 `".[classical]"`, `".[dl]"`, `".[fm]"`, `".[ingest]"`, `".[viz]"`.
 
 ## Usage

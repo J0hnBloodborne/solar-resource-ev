@@ -41,10 +41,10 @@ Key steers from the instructor:
 - **Stack:** **PyTorch only — no TensorFlow/Keras** (runs natively on Windows). The S2Cool
   Keras LSTM is **re-implemented in torch** via `neuralforecast` so every deep model shares
   one framework/API.
-- **Environment:** the existing venv **`F:\Documents\vit\vitvenv`** (Python 3.11,
-  **torch 2.11+cu130**, CUDA 13.0, **RTX 3070**). Do **not** reinstall torch. Deps are
-  pip-managed into that venv (this supersedes the earlier "uv" idea). The local GPU means the
-  DL and foundation-model tiers run on-device — no Colab needed.
+- **Environment:** Python 3.11 + **PyTorch ≥ 2.x** (install your own CUDA/CPU build; the dev
+  box runs torch 2.11+cu130 on an RTX 3070). Don't let the project reinstall torch. Deps are
+  pip-managed (this supersedes the earlier "uv" idea). A local GPU means the DL and
+  foundation-model tiers run on-device — no Colab needed.
 - **Study area:** **let the data choose the city** — pull candidate Pakistani cities, pick
   the one with the most intra-/inter-site GHI spread, then sample sites across it and rank.
 - **Pace:** ASAP, **no fixed calendar**; dependency-ordered milestones, parallelizable.
