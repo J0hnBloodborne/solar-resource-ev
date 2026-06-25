@@ -1,0 +1,33 @@
+name: Ingest (historic backfill)
+
+# Manual one-off: pull the full multi-year archive for all configured points and
+# publish the parquet cache as a build artifact (credential-free by default).
+on:
+  workflow_dispatch:
+    inputs:
+      years:
+        description: "History length in years"
+        default: "5"
+        required: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[ingest]"
+      - name: Backfill archive
+        run: solarpredict ingest --years ${{ github.event.inputs.years }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: parquet-cache-historic
+          path: data/cache/*.parquet
+          if-no-files-found: error

@@ -59,5 +59,20 @@ def ingest(
     typer.echo(f"Done: {len(results)} points, {total:,} rows cached.")
 
 
+@app.command(name="select-city")
+def select_city_command(
+    years: int | None = typer.Option(None, help="History length in years."),
+) -> None:
+    """Rank the focus cities by intra-city GHI spread; print the chosen Part B city."""
+    from solarpredict.data import OpenMeteoArchiveRepository
+    from solarpredict.data.ingest import default_date_range
+    from solarpredict.siting.selection import select_city
+
+    start, end = default_date_range(years)
+    chosen, ranking = select_city(OpenMeteoArchiveRepository(), start, end)
+    typer.echo(ranking.to_string(index=False))
+    typer.echo(f"\nData-chosen Part B city: {chosen}")
+
+
 if __name__ == "__main__":  # pragma: no cover
     app()
