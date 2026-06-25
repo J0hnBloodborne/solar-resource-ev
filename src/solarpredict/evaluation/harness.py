@@ -1,15 +1,16 @@
 """The benchmark harness: fit each model, score on test, report skill vs reference.
 
-Every model is scored identically here — daytime-masked, with a forecast skill
-score against smart (clear-sky) persistence. Each model receives the test rows
-*preceded by a context window* of history, so sequence models (LSTM, Chronos) can
-form their inputs; only the test portion is scored. Tabular/baseline models simply
-predict on every row and we slice to the test portion.
+Every model is scored identically — daytime-masked, with a forecast skill score
+against smart (clear-sky) persistence. Each model receives the test rows preceded
+by a context window of history (sequence models need it); only the test portion is
+scored. ``run_benchmark`` returns the metrics table plus the per-model predictions
+(for figures); ``evaluate`` is the thin table-only wrapper.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
@@ -23,7 +24,18 @@ DEFAULT_BASELINES = ("persistence", "smart_persistence", "climatology")
 CONTEXT_ROWS = 168  # 1 week of history prepended to the test window
 
 
-def evaluate(
+@dataclass
+class BenchmarkResult:
+    """Benchmark output: the metrics table plus everything figures need."""
+
+    table: pd.DataFrame
+    y_true: np.ndarray
+    mask: np.ndarray | None
+    test_ds: np.ndarray
+    predictions: dict[str, np.ndarray]
+
+
+def run_benchmark(
     prepared: pd.DataFrame,
     models: Sequence[str],
     *,
@@ -33,12 +45,8 @@ def evaluate(
     day_mask_col: str = "is_day",
     target: str = "y",
     context: int = CONTEXT_ROWS,
-) -> pd.DataFrame:
-    """Fit/score each model; return a metrics table sorted by RMSE.
-
-    Columns: model, tier, mae, rmse, r2, nrmse, mbe, skill (vs ``reference``).
-    Metrics use daytime rows only (``day_mask_col``).
-    """
+) -> BenchmarkResult:
+    """Fit/score each model; return metrics table + predictions on the test set."""
     ordered = prepared.sort_values("ds").reset_index(drop=True)
     if split is None:
         split = chronological_split(ordered)
@@ -51,13 +59,14 @@ def evaluate(
     test_data = ForecastData(frame=test_ctx, covariate_cols=covariate_cols)
 
     y_true = test_ctx[target].to_numpy(dtype=float)[-n_test:]
+    test_ds = test_ctx["ds"].to_numpy()[-n_test:]
     mask = (
         test_ctx[day_mask_col].to_numpy(dtype=bool)[-n_test:]
         if day_mask_col in test_ctx.columns
         else None
     )
 
-    names = list(dict.fromkeys(models))  # de-dup, preserve order
+    names = list(dict.fromkeys(models))
     if reference not in names:
         names = [reference, *names]
 
@@ -66,12 +75,10 @@ def evaluate(
     for name in names:
         model = get_forecaster(name)
         model.fit(train_data)
-        full = np.asarray(model.predict(test_data), dtype=float)
-        preds[name] = full[-n_test:]  # score only the test portion
+        preds[name] = np.asarray(model.predict(test_data), dtype=float)[-n_test:]
         tiers[name] = model.tier
 
     ref_rmse = rmse(y_true, preds[reference], mask)
-
     rows = [
         {
             "model": name,
@@ -85,4 +92,14 @@ def evaluate(
         }
         for name in names
     ]
-    return pd.DataFrame(rows).sort_values("rmse").reset_index(drop=True)
+    table = pd.DataFrame(rows).sort_values("rmse").reset_index(drop=True)
+    return BenchmarkResult(
+        table=table, y_true=y_true, mask=mask, test_ds=test_ds, predictions=preds
+    )
+
+
+def evaluate(
+    prepared: pd.DataFrame, models: Sequence[str], **kwargs: object
+) -> pd.DataFrame:
+    """Backward-compatible wrapper returning just the metrics table."""
+    return run_benchmark(prepared, models, **kwargs).table  # type: ignore[arg-type]

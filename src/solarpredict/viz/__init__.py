@@ -1,7 +1,7 @@
-"""Figure generators for the paper (matplotlib/plotly).
-
-Populated in M5/M6: model-performance bar chart, GHI heatmap, GHI/solar-potential
-time series, and the suitability-score ranking chart.
-"""
+"""Figure generators for the paper (matplotlib)."""
 
 from __future__ import annotations
+
+from .figures import feature_importance, model_comparison_bar, predicted_vs_actual
+
+__all__ = ["feature_importance", "model_comparison_bar", "predicted_vs_actual"]
