@@ -65,7 +65,9 @@ tests/         pytest (registry + metrics smoke tests)
   concrete Open-Meteo/DB source.
 - **Config-driven** via `pydantic-settings` (`SOLARPREDICT_*` env overrides).
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the multi-contributor workflow and
-[`docs/PLAN.md`](docs/PLAN.md) for the full plan + milestone breakdown (M0–M8).
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the multi-contributor workflow,
+[`docs/PLAN.md`](docs/PLAN.md) for the full plan + milestone breakdown (M0–M8), and
+[`docs/DATA_SUMMARY.md`](docs/DATA_SUMMARY.md) for the chosen-data summary (sites,
+variance, expected results — instructor-facing).
 
 > Repo name: **`solar-resource-ev`** · Python package: `solarpredict`.
