@@ -143,3 +143,8 @@ SAFE_COVARIATES: tuple[str, ...] = (
     "wind_speed_10m",
     "cloud_cover",
 )
+
+# Default ingest/model set: GHI (target) + safe covariates. Lighter/faster to fetch
+# than the full OPEN_METEO_HOURLY (the radiation components aren't used as t+1
+# features and clear-sky GHI is computed via pvlib).
+MODELING_HOURLY: tuple[str, ...] = ("shortwave_radiation", *SAFE_COVARIATES)
