@@ -107,7 +107,7 @@ class OpenMeteoArchiveRepository(DataRepository):
         for attempt in range(MAX_RATE_LIMIT_RETRIES):
             try:
                 return client.weather_api(ARCHIVE_URL, params=params)[0]
-            except Exception as exc:  # noqa: BLE001 - inspect message, then re-raise
+            except Exception as exc:
                 last = attempt == MAX_RATE_LIMIT_RETRIES - 1
                 if _is_rate_limit_error(exc) and not last:
                     logger.warning(
@@ -149,9 +149,7 @@ class OpenMeteoArchiveRepository(DataRepository):
                 "hourly": list(self._hourly),
                 "timezone": "UTC",
             }
-            logger.info(
-                "[fetch] %s %s -> %s", location.slug, chunk_start, chunk_end
-            )
+            logger.info("[fetch] %s %s -> %s", location.slug, chunk_start, chunk_end)
             response = self._request(params)
             frames.append(self._response_to_frame(response))
             if not meta:
