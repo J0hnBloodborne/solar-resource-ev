@@ -16,7 +16,7 @@ keywords = ["solar", "GHI", "forecasting", "time-series", "machine-learning"]
 # torch is provided by the project venv (F:\Documents\vit\vitvenv, torch 2.11+cu130)
 # and must NOT be reinstalled. Heavy tiers live in the optional groups below.
 dependencies = [
-    "numpy",
+    "numpy>=2",  # statsforecast/numba<0.60 would force numpy<2 and break opencv
     "pandas",
     "pyarrow",
     "scikit-learn",
@@ -28,8 +28,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Tier 0/1 classical + statistical models
-classical = ["xgboost", "lightgbm", "catboost", "statsforecast"]
+# Tier 0/1 classical + statistical models (statsmodels for SARIMAX — supports
+# numpy 2, unlike statsforecast which pins numpy<2 and breaks the venv)
+classical = ["xgboost", "lightgbm", "catboost", "statsmodels"]
 # Tier 2 deep learning (torch already present in the venv — do not reinstall it)
 dl = ["neuralforecast", "pytorch-lightning"]
 # Tier 3 foundation models (transformers already present in the venv)
@@ -38,8 +39,8 @@ fm = ["chronos-forecasting>=2.0"]
 ingest = ["openmeteo-requests", "requests-cache", "retry-requests"]
 # Figures
 viz = ["matplotlib", "plotly", "seaborn"]
-# Developer tooling
-dev = ["ruff", "mypy", "pytest", "pytest-cov", "pre-commit"]
+# Developer tooling (ruff pinned so CI matches local — avoids lint drift)
+dev = ["ruff==0.15.19", "mypy", "pytest", "pytest-cov", "pre-commit"]
 
 [project.scripts]
 solarpredict = "solarpredict.cli:app"
@@ -52,9 +53,17 @@ line-length = 88
 target-version = "py311"
 src = ["src", "tests", "pipelines"]
 
+[tool.ruff.format]
+line-ending = "lf"  # enforce LF everywhere (avoids CRLF/CI lint mismatches)
+
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF"]
 ignore = ["B008"]  # typer uses function-call defaults (Argument/Option) by design
+
+[tool.ruff.lint.isort]
+# Pin first-party so isort is deterministic: in CI the package is pip-installed and
+# would otherwise be classified third-party, changing import order (I001).
+known-first-party = ["solarpredict"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]
