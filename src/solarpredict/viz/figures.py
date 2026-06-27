@@ -440,3 +440,62 @@ def grid_ghi_heatmap(
     ax.set_title(f"Intra-city GHI gradient — {city}")
     _geo_aspect(ax, float((miny + maxy) / 2))
     return _save(fig, path)
+
+
+def _annotate_cells(ax: plt.Axes, image: Any, data: np.ndarray, fmt: str) -> None:
+    """Write each cell's value with a luminance-contrasting colour."""
+    for r in range(data.shape[0]):
+        for c in range(data.shape[1]):
+            rgba = image.cmap(image.norm(data[r, c]))
+            lum = 0.299 * rgba[0] + 0.587 * rgba[1] + 0.114 * rgba[2]
+            ax.text(
+                c,
+                r,
+                fmt % data[r, c],
+                ha="center",
+                va="center",
+                fontsize=8,
+                color="white" if lum < 0.5 else "black",
+            )
+
+
+def seasonal_site_heatmap(
+    df: pd.DataFrame, *, path: str | Path, city: str = "Karachi"
+) -> Path:
+    """Two heatmaps over (site, season): absolute GHI and within-season suitability.
+
+    Sites are ordered by their across-season mean suitability (best on top), so the
+    seasonal shift in the ranking reads off the rows.
+    """
+    seasons = ["Winter", "Spring", "Summer", "Autumn"]
+    order = (
+        df.groupby("site")["suitability"]
+        .mean()
+        .sort_values(ascending=False)
+        .index.tolist()
+    )
+    ghi = df.pivot(index="site", columns="season", values="mean_ghi_day").reindex(
+        index=order, columns=seasons
+    )
+    suit = df.pivot(index="site", columns="season", values="suitability").reindex(
+        index=order, columns=seasons
+    )
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 6))
+    panels = [
+        (axes[0], ghi, "Mean daytime GHI (W/m$^2$)", "YlOrRd", "%.0f"),
+        (axes[1], suit, "Suitability (0-1, within season)", "viridis", "%.2f"),
+    ]
+    for ax, data, title, cmap, fmt in panels:
+        arr = data.to_numpy(float)
+        image = ax.imshow(arr, aspect="auto", cmap=cmap)
+        ax.set_xticks(range(len(seasons)))
+        ax.set_xticklabels(seasons)
+        ax.set_yticks(range(len(order)))
+        ax.set_yticklabels(order)
+        _annotate_cells(ax, image, arr, fmt)
+        fig.colorbar(image, ax=ax, shrink=0.8)
+        ax.set_title(title)
+    fig.suptitle(f"Seasonal solar resource & site suitability — {city}", fontsize=13)
+    fig.tight_layout()
+    return _save(fig, path)

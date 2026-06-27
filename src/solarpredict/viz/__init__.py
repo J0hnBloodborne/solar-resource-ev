@@ -14,6 +14,7 @@ from .figures import (
     model_comparison_bar,
     predicted_vs_actual,
     seasonal_ghi_lines,
+    seasonal_site_heatmap,
     site_suitability_bar,
 )
 
@@ -29,5 +30,6 @@ __all__ = [
     "model_comparison_bar",
     "predicted_vs_actual",
     "seasonal_ghi_lines",
+    "seasonal_site_heatmap",
     "site_suitability_bar",
 ]

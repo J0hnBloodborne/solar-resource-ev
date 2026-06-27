@@ -171,6 +171,22 @@ Talking points:
   suit utility-scale solar farms); EV *siting* trades a little resource for demand and
   accessibility. fig6 shows both at once — full-city resource surface + urban sites.
 
+## Seasonal site suitability — 4 seasons (fig9, the instructor's explicit ask)
+Year split into meteorological seasons (Winter DJF / Spring MAM / Summer JJA /
+Autumn SON); suitability (yield + day-to-day consistency + coolness) computed within
+each season and normalised across the 8 Karachi districts. Source:
+reports/seasonal_site_suitability_karachi.csv; figure fig9_seasonal_sites.png.
+- Strong seasonal cycle: Spring (pre-monsoon) is brightest everywhere (~500-507
+  W/m^2 daytime), Summer (monsoon) is the dimmest (~366-378, a ~25% drop from spring),
+  Winter/Autumn sit in between (~396-416).
+- The ranking is mostly stable but it FLIPS in summer: Gadap (northern fringe) is the
+  best site in Winter/Spring/Autumn (suit 0.75 / 0.95 / 1.00), but in Summer the cooler
+  coastal/western sites win — SITE 0.71 and Clifton 0.55 overtake Gadap 0.65. Clifton's
+  summer jump (0.55 vs 0.25 in winter) is the coastal-coolness term mattering most when
+  it is hottest. Good, defensible "creativity" point for the paper.
+- Practical read: a Gadap/SITE charger is the year-round pick; if optimising for the
+  hot monsoon months specifically, the coastal sites claw back some ground.
+
 ## Caveats / honesty
 - ERA5 is reanalysis at 9–25 km: captures city resource + coastal gradient, not
   sub-cell microclimate. Within-city differences are genuinely small.
