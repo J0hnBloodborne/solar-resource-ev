@@ -501,6 +501,39 @@ def seasonal_site_heatmap(
     return _save(fig, path)
 
 
+_MONTH_STARTS = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335]
+_MONTH_LABELS = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"]
+_PV_DELIVERED = 0.20 * 0.80 * 0.90
+
+
+def climatology_band(
+    df: pd.DataFrame, *, path: str | Path, city: str = "Karachi"
+) -> Path:
+    """Expected daily solar energy by day of year, with the P10-P90 spread across
+    years. A right axis reads the same curve as delivered PV energy per m²."""
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.fill_between(
+        df["doy"], df["p10"], df["p90"], alpha=0.25, color="#d9a441",
+        label="P10-P90 across years",
+    )
+    ax.plot(df["doy"], df["p50"], color="#d62728", lw=1.6, label="median day")
+    ax.plot(df["doy"], df["mean"], color="#333333", lw=0.9, ls="--", label="mean day")
+    ax.set_xlabel("Month")
+    ax.set_ylabel("Daily GHI energy (kWh/m$^2$/day)")
+    ax.set_title(f"Expected daily solar energy by day of year — {city}")
+    ax.set_xticks(_MONTH_STARTS)
+    ax.set_xticklabels(_MONTH_LABELS)
+    ax.set_xlim(1, 365)
+    ax.grid(alpha=0.3)
+    ax.legend(fontsize=8, loc="upper right")
+
+    low, high = ax.get_ylim()
+    pv = ax.twinx()
+    pv.set_ylim(low * _PV_DELIVERED, high * _PV_DELIVERED)
+    pv.set_ylabel("Delivered PV energy (kWh/m$^2$/day)")
+    return _save(fig, path)
+
+
 def benchmark_city_heatmap(
     table: pd.DataFrame,
     *,

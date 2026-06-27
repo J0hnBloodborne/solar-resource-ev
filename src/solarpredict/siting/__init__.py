@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .cities import REFERENCE_YIELDS, city_summary, monthly_ghi
+from .climatology import daily_climatology, monthly_climatology
 from .seasonal import SEASON_ORDER, seasonal_site_suitability
 from .selection import (
     rank_cities_by_intracity_spread,
@@ -15,6 +16,8 @@ __all__ = [
     "REFERENCE_YIELDS",
     "SEASON_ORDER",
     "city_summary",
+    "daily_climatology",
+    "monthly_climatology",
     "monthly_ghi",
     "rank_cities_by_intracity_spread",
     "seasonal_site_suitability",
