@@ -136,6 +136,46 @@ Talking points:
   ExtraTrees, XGBoost, LightGBM, CatBoost; tier-2 LSTM + NHITS (neuralforecast,
   covariate-aware); tier-3 Chronos-2 (Amazon, ~120M-param transformer, zero-shot).
 
+## Multi-city benchmark (Part A breadth — fig10 / fig10b)
+Full 12-model benchmark run for all 7 cities (not just Karachi), 5-year hourly,
+hour-ahead, daytime-masked, skill vs smart persistence. Source:
+reports/benchmark_multicity.csv; figures fig10_multicity_skill.png (city x model
+skill heatmap) + fig10b_multicity_rmse.png.
+- The ranking is the SAME in every city: tree ensembles win. Mean skill across
+  cities — extra_trees 0.418, catboost 0.416, xgboost 0.408, lightgbm 0.404,
+  random_forest 0.388; then nhits 0.336, chronos2 0.285, lstm 0.263 (~ ridge 0.263).
+  Naive: climatology -0.30, plain persistence -0.97 (both worse than smart persistence).
+- Best per city: extra_trees wins 4/7 (Karachi, Multan, Quetta, Gilgit), catboost 2
+  (Lahore, Peshawar), lightgbm 1 (Islamabad) — i.e. it is always a gradient-boosted /
+  bagged tree, never the deep or foundation model.
+- Chronos-2 (zero-shot, NO local training) still posts positive skill everywhere
+  (0.21-0.38) and beats the LSTM — strong for an off-the-shelf model — but a locally
+  trained tree beats it in all 7 cities. This is the honest headline: on a
+  near-deterministic, short-horizon target the modern foundation model is competitive
+  out-of-the-box but does not dethrone classical ML.
+- Predictability tracks climate: highest skill in Quetta (0.51, clear high-desert
+  skies), lowest in Gilgit (0.37, complex mountain weather).
+
+## Second target: temperature + the model-vs-target insight (fig11 / fig11b)
+S2Cool also predicted temperature, so we benchmark hour-ahead 2 m air temperature
+on the same tiers (skill vs plain persistence; no clear-sky reference / night mask
+for temperature). Source: reports/benchmark_temp_karachi.csv.
+- THE RANKING FLIPS vs GHI. On temperature the modern models win: Chronos-2 best
+  (skill 0.603, RMSE 0.35 degC), NHITS second (0.587), THEN the trees
+  (extra_trees 0.564, random_forest 0.552, ...). R^2 ~ 0.99 for everything (temperature
+  is smooth and strongly periodic).
+- Interpretation (the paper's nuance): the best model depends on the target's
+  character. Temperature is smooth + periodic -> sequence/foundation models
+  (Chronos-2, NHITS) shine. GHI is spiky + cloud-driven -> engineered-lag tree
+  ensembles win. So the foundation model is not a gimmick: it is genuinely best on
+  the smooth target and competitive on the hard one. Including both targets is what
+  makes that visible.
+- PV heat-derating (reports/temp_derating_karachi.csv, NOCT model, -0.4%/degC): hot
+  Karachi loses ~9.4-10.1% of annual PV energy to cell heating. Cooler coastal sites
+  lose least (Clifton 9.40%) and the hot inland winner Gadap most (10.07%) — so
+  Gadap's GHI lead is partly clawed back by heat, giving the coastal-coolness term in
+  the suitability index a concrete physical basis (and explaining the summer flip).
+
 ## Figure inventory (reports/figures/)
 - fig1_model_skill / fig1b_model_rmse — model comparison (Part A).
 - fig2_ghi_map — Pakistan city GHI map.
@@ -149,6 +189,9 @@ Talking points:
   district outline (interpolated from a ~0.1 deg interior grid).
 - fig4b_site_suitability (within-city ranking) + fig6_ev_locations (recommended sites
   over the GHI surface).
+- fig9_seasonal_sites — site x season GHI + suitability heatmaps.
+- fig10_multicity_skill / fig10b_multicity_rmse — (city x model) benchmark heatmaps.
+- fig11_temp_skill / fig11b_temp_rmse — hour-ahead temperature model comparison.
 
 ## Maps (real geography, geoBoundaries gbOpen PAK ADM1/ADM2)
 - Inter-city (fig2) draws Pakistan's province outlines + national border; intra-city
