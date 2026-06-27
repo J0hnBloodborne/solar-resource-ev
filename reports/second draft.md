@@ -1,43 +1,39 @@
 # Solar resource prediction for EV charging
 
-This report walks through every part of the project and explains each piece in the context
-it was built for. The context is a conference paper with two contributions: predicting the
-solar resource with machine learning, and ranking locations to site solar-powered EV charging
-stations. For each analysis the report says what it is, why it belongs in the paper, and what
-it means for an actual charger. All numbers come from real Open-Meteo data and real model
+This report presents the results and analysis for two pieces of work, set in the context they
+serve: predicting the solar resource with machine learning, and ranking locations to site
+solar-powered EV charging stations. For each analysis it says what it is, what it shows, and
+what it means for an actual charger. All numbers come from real Open-Meteo data and real model
 runs, and the source file is named for each one so it can be traced.
 
-## 1. The paper, and what this work supplies
+## 1. What this report covers
 
-The paper has two contributions, set in the project meeting and decoded from the brief.
+The work has two parts.
 
-1. Compare several machine-learning models at predicting solar power generation potential.
-   In practice that means predicting global horizontal irradiance (GHI), the solar resource,
-   and converting it to PV power. The student supplies the benchmark and figures; the
-   instructor writes the prose.
+1. Predict global horizontal irradiance (GHI), the solar resource, with a range of
+   machine-learning models, and convert it to PV power. GHI is the irradiance that sets a
+   panel's output, so it is both what the models predict and the basis for siting.
 2. Rank locations by solar suitability across the year and identify good sites for
    solar-powered EV charging stations, within one city where the resource varies.
 
-Several decisions were fixed in the brief and they shape everything below. The method is
-machine learning; the naive baselines stay only as the reference a solar forecast is scored
-against, not as an open question about whether ML is worthwhile. The study city is chosen from
-the data, where intra-city variation actually exists. The data source is Open-Meteo. No result
-is fabricated, so a weak number is reported as it is.
+The method is machine learning throughout; the naive baselines are kept only as the reference a
+solar forecast is scored against. The study city (Karachi) is the one the data picks out as
+having usable intra-city variation. The data source is Open-Meteo, and a weak result is
+reported as it is.
 
-The brief also named four figures the paper needs: a model-comparison bar chart, a GHI
-heatmap, a GHI and solar-potential time series, and a suitability-ranking chart. All four are
-delivered (fig1, fig2b/fig2c, fig3b, fig4b), with the rest of the figures extending them.
+The standard solar figures are included: the model-comparison bar chart (fig1), the GHI
+heatmaps (fig2b, fig2c), the GHI and solar-potential time series (fig3b), and the
+suitability-ranking chart (fig4b), with the rest extending them.
 
-Everything that follows maps to one of the two contributions. Sections 2 and 3 supply
-contribution 1 (predicting the resource); section 4 supplies contribution 2 (ranking and
-siting). Section 5 covers how the work was built so the paper is reproducible.
+Sections 2 and 3 are the forecasting work; section 4 is the siting work; section 5 is how the
+analysis was built so the results reproduce.
 
 ## 2. The data everything stands on
 
-Both contributions stand on one record: hourly GHI and weather for a set of Pakistani cities.
+Both parts stand on one record: hourly GHI and weather for a set of Pakistani cities.
 GHI is the broadband irradiance on a horizontal surface, in W/m². It is the quantity that sets
-a flat panel's output, which is why it is both the thing the models predict in contribution 1
-and the basis for ranking sites in contribution 2. Air temperature enters because a hot panel
+a flat panel's output, which is why it is both what the models predict (section 3) and the
+basis for ranking sites (section 4). Air temperature enters because a hot panel
 loses efficiency, so it shapes the power a charger actually delivers (section 4.6).
 
 The data is ERA5, ECMWF's reanalysis, served hourly through the Open-Meteo Historical Archive
@@ -50,8 +46,8 @@ year-to-year variation the siting work needs.
 
 Seven cities cover the country's climate range: Karachi on the coast, Lahore and Multan on the
 plains, Islamabad and Peshawar in the north-west, Quetta in the western high desert, and Gilgit
-in the mountains. That spread is deliberate. For contribution 1 it lets us test whether the
-best model is the same across resource regimes; for contribution 2 it is the inter-city ranking
+in the mountains. That spread is deliberate. For the forecasting it lets us test whether the
+best model is the same across resource regimes; for the siting it is the inter-city ranking
 itself.
 
 The archive returns a full multi-year series for a point in one request, so the call count
@@ -70,18 +66,17 @@ of coarse cells and an interpolated surface rather than a claim about individual
 is also a reanalysis, not a ground measurement, so the numbers are physically sensible but
 unvalidated against a local sensor.
 
-## 3. Predicting the solar resource (contribution 1)
+## 3. Predicting the solar resource
 
 A solar-powered charger's output is the resource itself, so forecasting GHI is what lets an
 operator schedule charging, decide when to lean on storage or the grid, and commit to a
-day-ahead plan. The paper's first contribution is to find which model predicts the resource
-best, and the rest of this section is that benchmark plus the experiments that make it
-credible and useful.
+day-ahead plan. The goal here is to find which model predicts the resource best, with the
+experiments that make the result credible and useful.
 
 ### 3.1 How a forecast is scored, and why this rigor
 
-Solar forecasting has a standard way of being measured, and the paper needs to use it or the
-results will not be taken seriously. Four choices make up that rigor.
+Solar forecasting has a standard way of being measured, and using it is what makes a result
+credible and comparable. Four choices make up that rigor.
 
 A clear-sky model gives the GHI expected with no clouds, from solar geometry alone (we use
 pvlib's Haurwitz model). It does two jobs. It defines the night mask: at night clear-sky GHI is
@@ -101,30 +96,28 @@ use only past values plus terms that are deterministic at the target time (clear
 time-of-day); the direct and diffuse radiation components are excluded because they are an
 algebraic decomposition of the target and would leak it.
 
-### 3.2 The models, and why each tier is in the paper
+### 3.2 The models, and what each tier is for
 
-The lineup is four tiers, from naive to modern, and each tier earns its place in the paper for a
-reason.
+The lineup is four tiers, from naive to modern.
 
-| Tier | Models | Why it is in the paper |
+| Tier | Models | Role |
 |---|---|---|
 | 0 — naive | persistence, smart (clear-sky) persistence, climatology | The reference a solar forecast is scored against |
 | 1 — classical ML | Ridge, Random Forest, Extra Trees, XGBoost, LightGBM, CatBoost | The bar the modern models must clear; the workhorses of tabular forecasting |
 | 2 — deep learning | LSTM, NHITS | Modern neural sequence models, one of them (NHITS) covariate-aware |
-| 3 — foundation model | Chronos-2 | A 2025-generation pretrained transformer, used zero-shot; the paper's novelty hook |
+| 3 — foundation model | Chronos-2 | A 2025-generation pretrained transformer, used zero-shot |
 
 The naive tier is the measuring stick, not a question about whether AI helps. The classical tier
 is the bar, since gradient-boosted trees are the default for tabular forecasting. The deep and
-foundation tiers are the modern methods the paper exists to test: the novelty is a reproducible
-benchmark of a current foundation model against classical ML and deep learning for hour-ahead
-GHI in Pakistani cities, scored as a clear-sky skill score. Including them is the point even in
-the cases where a tree wins, because showing where they win and where they do not is the
-contribution.
+foundation tiers are the modern methods under test: a reproducible benchmark of a current
+foundation model against classical ML and deep learning for hour-ahead GHI in Pakistani cities,
+scored as a clear-sky skill score. Running them against the classical bar shows where they win
+and where they do not, which is what the comparison is for.
 
 ### 3.3 Which model predicts hour-ahead GHI best
 
 Hour-ahead GHI, Karachi, five years, daytime hours. Source: `reports/benchmark_karachi.csv`.
-This is the model-comparison bar chart the brief asked for.
+This is the model-comparison bar chart.
 
 | Model | Tier | RMSE | R² | MBE | Skill |
 |---|---|---|---|---|---|
@@ -190,11 +183,11 @@ across cities in the last column.
 
 ![GHI RMSE by city and model](figures/fig10b_multicity_rmse.png)
 
-**What this shows, and what it means for the paper.** The ranking is the same in all seven
+**What this shows.** The ranking is the same in all seven
 cities: a tree ensemble wins every time, from the coast to the high desert to the mountains, and
-it is never the deep or foundation model. That invariance is what lets the paper state the result
-as general rather than as a Karachi curiosity, and it tells an operator deploying chargers across
-the country to standardise on a gradient-boosted tree. Skill tracks how learnable each city's
+it is never the deep or foundation model. That invariance shows the result is general rather than
+a Karachi accident, and it tells an operator deploying chargers across the country to standardise
+on a gradient-boosted tree. Skill tracks how learnable each city's
 sky is, highest in clear-skied Quetta (0.51) and lowest in mountainous Gilgit (0.37). Chronos-2
 stays positive everywhere with no local training and beats the trained LSTM, which is a strong
 showing for an off-the-shelf model, though a local tree still beats it.
@@ -220,9 +213,9 @@ training window from one month to four years. Source: `reports/data_efficiency_k
 and it is the best model in the table at three months or less; XGBoost is actually worse than the
 naive reference at one month. The trees overtake only once they have about a year of data. So the
 deployment rule for a new charger site is concrete: run the foundation model or NHITS from day
-one, and switch to a trained tree after roughly a year of local history. The paper's modern
-models are not just marginally better at the asymptote, they are the only usable option in the
-cold-start window that a real rollout starts in.
+one, and switch to a trained tree after roughly a year of local history. The modern models are
+not just marginally better at the asymptote, they are the only usable option in the cold-start
+window a real rollout starts in.
 
 ### 3.6 Predicting temperature too, and why it matters here
 
@@ -250,7 +243,7 @@ Source: `reports/benchmark_temp_karachi.csv`.
 
 ![Hour-ahead temperature RMSE by model](figures/fig11b_temp_rmse.png)
 
-**What this shows, and why it strengthens the paper.** The ranking inverts. On temperature the
+**What this shows.** The ranking inverts. On temperature the
 modern models win, Chronos-2 first and NHITS second, with the trees behind. The reason is the
 signal: temperature is smooth and strongly periodic, which a learned sequence representation fits
 closely, while GHI is spiky and cloud-driven, where engineered tree features do best. So the
@@ -284,7 +277,7 @@ Source: `reports/benchmark_dayahead_karachi.csv`.
 **What this shows, and what it means for a charger.** Skill collapses from 0.40 to 0.17 and the
 error nearly doubles, because a day out the cloud field that made the hour-ahead forecast easy has
 been replaced. Day-ahead GHI is genuinely hard, and that is what any day-ahead charging plan
-has to work with. Two shifts matter for the paper. The ranking compresses, with the top six models
+has to work with. Two shifts stand out. The ranking compresses, with the top six models
 inside 0.12 to 0.17 and Chronos-2 climbing from seventh to third, tied with the best trees, so the
 foundation model holds up better as the horizon lengthens, the same behaviour as the cold-start
 result. And climatology turns from the worst non-persistence model at one hour to mid-pack at a
@@ -292,9 +285,9 @@ day, because once cloud persistence is gone the seasonal average is nearly as go
 model. That last point is the bridge to siting: beyond the forecast horizon, the climatological
 expectation in section 4.7 is what an operator plans against.
 
-## 4. Ranking sites and siting chargers (contribution 2)
+## 4. Ranking sites and siting chargers
 
-The second contribution turns the resource into siting. It ranks locations by solar suitability,
+This part turns the resource into siting. It ranks locations by solar suitability,
 first between cities and then within one city, and recommends where to put a solar-powered EV
 charger. The thread through it is that a charger needs both a good resource and real demand, and
 the two do not coincide.
@@ -319,19 +312,18 @@ Per-city five-year mean GHI as an annual yield. Source: `reports/city_summary.cs
 
 ![Seasonal GHI by city](figures/fig3_seasonal.png)
 
-**What this shows, and what it means for the paper.** Every city beats the national-average yield
+**What this shows.** Every city beats the national-average yield
 of Germany (about 1080) or the UK (about 1000), both of which run large EV fleets on solar-heavy
 grids, so the binding constraint on solar-EV charging in Pakistan is not the sun but demand, grid,
 and capital. Quetta and Gilgit sit above the coastal study city on raw resource and are the
-untapped higher-solar hosts as adoption moves inland, a point the paper can flag for future
-deployment. Karachi has the steadiest supply of the seven (lowest seasonality), which for a
+untapped higher-solar hosts as adoption moves inland. Karachi has the steadiest supply of the
+seven (lowest seasonality), which for a
 charging station means the most uniform solar duty cycle and the smallest buffer to hold a target
 uptime, and is part of why it is the within-city study.
 
 ### 4.2 The resource within a city
 
-Two views of the Karachi resource, both in local time, including the GHI heatmap and the GHI and
-solar-potential time series the brief asked for.
+Two views of the Karachi resource, both in local time.
 
 ![GHI by hour and month, Karachi](figures/fig2b_ghi_heatmap.png)
 
@@ -354,11 +346,11 @@ is what makes the northern fringe the resource-favoured part of the city.
 
 ### 4.3 Ranking the districts
 
-The districts are ranked with a transparent weighted index, so the paper can explain every term
-rather than point at a black box. It blends annual GHI yield (weight 0.60), seasonal consistency
+The districts are ranked with a transparent weighted index, so every term is explainable rather
+than a black box. It blends annual GHI yield (weight 0.60), seasonal consistency
 (0.25), and panel coolness (0.15, since a hot cell loses efficiency). Yield leads, with the others
 as tie-breakers. Source: `reports/site_suitability_karachi.csv`. This is the suitability-ranking
-chart the brief asked for.
+chart.
 
 | Site | Annual yield (kWh/m²/yr) | Daytime GHI (W/m²) | Mean temp (°C) | Suitability |
 |---|---|---|---|---|
@@ -401,8 +393,8 @@ and the urban sites on top, so the bright unsited zones make the argument visual
 
 ### 4.5 Siting through the seasons
 
-The brief asked for the year split into four seasons, so the suitability index is recomputed inside
-each meteorological season. Source: `reports/seasonal_site_suitability_karachi.csv`.
+The year is split into four meteorological seasons and the suitability index is recomputed inside
+each. Source: `reports/seasonal_site_suitability_karachi.csv`.
 
 | Site | Winter | Spring | Summer | Autumn |
 |---|---|---|---|---|
@@ -489,9 +481,8 @@ grid or battery reserve an operator carries to keep throughput flat through a ba
 
 ## 5. How the work was built
 
-The paper's credibility rests on the numbers being reproducible, and the team needs to extend the
-work without stepping on each other, so the project is a package rather than a notebook. The
-importable code is in `src/solarpredict/` (data, features, models, evaluation, solar, siting, viz)
+Reproducible results and parallel work by several contributors drove the structure, so the
+project is a package rather than a notebook. The importable code is in `src/solarpredict/` (data, features, models, evaluation, solar, siting, viz)
 and the scripts that produce each figure and table are in `pipelines/`. Models register behind one
 interface, so adding one is a single file with no edits to shared code, and the data sits behind a
 repository interface so the source is swappable. ruff, mypy, and pytest run in CI on every push,
