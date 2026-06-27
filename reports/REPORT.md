@@ -1,20 +1,14 @@
-# Solar resource prediction: data, models, and EV-charging siting
+# Solar resource prediction and solar-EV charging siting in Pakistan
 
-This document is the full record of the analysis behind the paper. It covers where the
-data comes from and how it was collected, the models we compared and how they were
-scored, the results for every experiment, and the siting work for solar-powered EV
-charging. Every figure and table produced by the project is included here, with the
-source file named so each number can be traced back to a run.
+This document records the data, methods, and results behind the paper in full. Every
+figure and table the project produces is included, and the source file for each number is
+named so it can be traced to a run. It is written for a reader fluent in time-series
+forecasting and PV, and it states what was done and what came out.
 
-All numbers come from real Open-Meteo data and actual model runs. Nothing is invented.
-Where a result is weak or unflattering it is reported as-is.
-
-The work has two parts:
-
-1. Compare several machine-learning models at predicting solar irradiance (GHI), and
-   convert that to PV power.
-2. Rank locations by solar suitability and pick good sites for solar-powered EV
-   charging stations.
+The work has two parts. The first compares machine-learning models at predicting global
+horizontal irradiance (GHI) one hour ahead, and converts the forecast to PV power. The
+second ranks locations by solar suitability and identifies good sites for solar-powered EV
+charging, between cities and within one city (Karachi).
 
 ---
 
@@ -22,65 +16,68 @@ The work has two parts:
 
 ### 1.1 Source and variables
 
-Data is from the Open-Meteo Historical Archive, which serves the ERA5 reanalysis. ERA5
-is a physically consistent, hourly, global record produced by ECMWF by blending weather
-models with observations. It is free, needs no API key, and goes back to 1940.
+The data is ERA5, ECMWF's fifth-generation reanalysis, served hourly through the
+Open-Meteo Historical Archive (free, no key, record back to 1940). ERA5 assimilates
+observations into a frozen IFS model cycle by 4D-Var and distributes surface fields on a
+0.25° grid. Surface shortwave is the radiation scheme's output, so it already carries the
+model's assimilated cloud and aerosol state rather than a raw satellite retrieval. That
+makes it a physically consistent, gap-free series, which is what the sequence models need,
+at the cost of the spatial smoothing discussed in §1.4.
 
-We fetch five hourly variables per location:
+Five hourly variables per location:
 
-| Variable (Open-Meteo name) | Meaning | Role |
+| Variable (Open-Meteo name) | Quantity | Role |
 |---|---|---|
-| `shortwave_radiation` | Global horizontal irradiance, GHI (W/m²) | Main prediction target |
-| `temperature_2m` | Air temperature at 2 m (°C) | Second target + covariate |
-| `relative_humidity_2m` | Relative humidity (%) | Covariate |
-| `wind_speed_10m` | Wind speed at 10 m (m/s) | Covariate |
-| `cloud_cover` | Total cloud cover (%) | Covariate |
+| `shortwave_radiation` | GHI, W/m² | Primary target |
+| `temperature_2m` | 2 m air temperature, °C | Second target and covariate |
+| `relative_humidity_2m` | Relative humidity, % | Covariate |
+| `wind_speed_10m` | 10 m wind speed, m/s | Covariate |
+| `cloud_cover` | Total cloud cover, % | Covariate |
 
-GHI is the energy that a flat panel receives per square metre. It is the quantity that
-sets solar output, so it is the headline target.
+GHI is the broadband irradiance on a horizontal plane and is the quantity that sets a
+fixed flat panel's output, so it is the headline target. Temperature enters twice, as a
+covariate for the GHI models and as a forecast target in its own right (§4), and it drives
+the cell-temperature derate in §5.8.
 
 ### 1.2 Coverage
 
-- **Period:** five years of hourly data per location, about 43,800 records each, ending
-  roughly a week before the run date (ERA5 has a short processing lag).
-- **Cities (7):** Islamabad, Lahore, Karachi, Peshawar, Multan, Quetta, Gilgit. These
-  span the country: the southern coast, the central plains, the western highlands, and
-  the northern mountains.
-- **Within Karachi (8 named districts):** Clifton, DHA, Korangi, Malir, Gulshan-e-Iqbal,
-  North Nazimabad, SITE, Gadap. Spread from the coast in the south to the urban fringe
-  in the north.
-- **Karachi GHI grid:** a regular grid at about 0.1° spacing over the Karachi district,
-  29 points that fall inside the district boundary, used for the within-city heatmap.
+- **Period.** Five years of hourly data per location, roughly 43,800 records each, ending
+  about a week before the run date (ERA5's processing latency).
+- **Cities (7).** Islamabad, Lahore, Karachi, Peshawar, Multan, Quetta, Gilgit. These span
+  the climatic range of the country: the Arabian Sea coast, the Punjab plains, the western
+  high desert, and the northern mountains.
+- **Karachi districts (8).** Clifton, DHA, Korangi, Malir, Gulshan-e-Iqbal, North
+  Nazimabad, SITE, Gadap, spread from the southern coast to the northern urban fringe.
+- **Karachi GHI grid.** A regular 0.1° grid over the Karachi district, the 29 points that
+  fall inside the district polygon, used for the intra-city resource surface.
 
-### 1.3 How it was acquired
+### 1.3 Acquisition pipeline
 
-The archive returns a full multi-year hourly series for a point in one request, so the
-number of calls is roughly the number of locations, not the number of days. Open-Meteo
-weights a request by range times variables, so a five-year, five-variable pull is heavy
-enough to trip the per-minute limit. To stay inside the free limits the fetcher:
+The archive returns a full multi-year hourly series for a point in a single request, so
+the call count scales with the number of locations, not the number of days. Open-Meteo
+prices a request by a cost roughly proportional to (variables × days), so a five-year,
+five-variable pull for one point is worth several hundred units against the per-minute
+budget. The fetcher accommodates that by:
 
-- splits each pull into one-year chunks,
-- waits and retries when the minute limit is hit,
-- caches every location's full series to a Parquet file keyed by site, date range, and
-  variable set, so nothing is ever fetched twice.
+- splitting each location into 365-day chunks to keep a single request under the
+  per-minute ceiling,
+- backing off 62 s and retrying when a limit error is returned,
+- writing each location's full series to a Parquet file keyed by site, date range, and a
+  hash of the variable set, so nothing is fetched twice.
 
-The data layer sits behind a small interface (`DataRepository`), so the same code could
-later read from a database instead of the archive without changing the callers.
+The fetcher sits behind a `DataRepository` interface, so the archive can later be swapped
+for a database without touching the callers.
 
-### 1.4 Resolution: what the data can and cannot resolve
+### 1.4 What the resolution resolves
 
-ERA5's grid is coarse, roughly 25 km for radiation. That has two consequences that
-shape the whole study:
-
-- **Between cities** the differences are large and real. The grid easily separates
-  Quetta from Karachi.
-- **Within a city** the differences are small. Karachi spans only a handful of grid
-  cells, so the intra-city spread in GHI is on the order of a few percent. We report
-  that spread honestly rather than dressing it up.
-
-ERA5 is a reanalysis, not a ground measurement. It captures the regional resource and
-the coastal gradient well, but it is not a substitute for an on-site sensor. A funded
-pyranometer for ground validation is noted as future work.
+At a ~25 km effective scale a metro the size of Karachi occupies only a 3×4 block of grid
+cells, so any intra-urban contrast is a blend of a handful of cell values rather than a
+street-level field. Two consequences run through the whole study. Between cities, separated
+by hundreds of kilometres, the contrasts are fully resolved and the inter-city ranking is
+solid. Within a city the dynamic range is about 5%, so the intra-city work is presented as
+an interpolated surface and a ranking of coarse cells, not as point claims about
+neighbourhoods. ERA5 is also a reanalysis, not a ground measurement: internally consistent
+and physically sensible, but unvalidated against a local pyranometer.
 
 ---
 
@@ -88,87 +85,86 @@ pyranometer for ground validation is noted as future work.
 
 ### 2.1 Clear-sky model and night masking
 
-A clear-sky model gives the GHI you would see with no clouds, from solar geometry alone.
-We compute it with pvlib (the Haurwitz model). Two uses:
+A clear-sky model gives the GHI expected under cloud-free skies from solar geometry alone;
+we use pvlib's Haurwitz model. It serves two purposes.
 
-- **Night masking.** At night the clear-sky GHI is near zero. We drop those hours from
-  every metric. If they are kept, the long run of correct night-time zeros inflates R²
-  to about 0.99 for any model and hides the real daytime skill.
-- **Clear-sky index.** The ratio `kt = GHI / clear-sky GHI` strips out the predictable
-  daily and seasonal cycle, leaving the cloud-driven part that is the hard thing to
-  forecast.
+Night masking. Night hours are long runs of true zeros that every model predicts
+correctly. Because R² = 1 − SS_res/SS_tot, those zeros inflate the total sum of squares
+(the variance about the 24 h mean) far more than the residual sum of squares, which pushes
+R² toward 0.99 for any model and hides the daytime skill. Dropping hours with solar zenith
+beyond about 90° (clear-sky GHI near zero) removes that and leaves only the daytime
+variance the forecast actually has to explain.
+
+Clear-sky index. The ratio kt = GHI / GHI_cs detrends the deterministic astronomical and
+seasonal component, isolating the stochastic cloud transmittance, which is the only
+genuinely hard part of the signal to predict.
 
 ### 2.2 Features
 
-For the tabular models each row is built only from information available at or before
-the forecast time, so predicting the next hour is leakage-free:
+Each row for the tabular models is built only from information available at or before the
+forecast time, so the one-step-ahead prediction is leakage-free:
 
-- lagged GHI (1, 2, 3, and 24 hours back),
-- lagged covariates (temperature, humidity, wind, cloud at 1 and 24 hours back),
-- rolling mean and standard deviation of GHI (3- and 24-hour windows, shifted back one
-  step),
+- lagged GHI at 1, 2, 3, and 24 hours,
+- lagged covariates (temperature, humidity, wind, cloud) at 1 and 24 hours,
+- rolling mean and standard deviation of GHI over 3 h and 24 h windows, shifted back one
+  step,
 - the lagged clear-sky index,
-- the clear-sky GHI at the forecast time (this is deterministic, so it is safe to use
-  directly),
-- cyclical encodings of hour-of-day and day-of-year (sine and cosine).
+- the clear-sky GHI at the forecast hour, which is deterministic and therefore safe to use
+  concurrently,
+- sine and cosine encodings of hour-of-day and day-of-year.
 
-The radiation components that Open-Meteo can also return (direct, diffuse, DNI) are
-deliberately not used as predictors. They are parts of the target and would leak it.
+The radiation components the archive can also serve (direct, diffuse, DNI) are excluded as
+predictors. They are an algebraic decomposition of the target (GHI = DNI·cos θ + DHI), so
+feeding them concurrently is target leakage.
 
-### 2.3 Train/test split and leakage rules
+### 2.3 Splitting and leakage control
 
-The split is strictly chronological: the models train on the earlier part of the series
-and are tested on the most recent 20%. The data is never shuffled, because shuffling
-would let a model see the future. The sequence models (LSTM, NHITS, Chronos-2) get a
-one-week context window of history immediately before the test set so they have
-something to condition on, but only the test portion is scored.
+The split is a strictly chronological holdout: the models train on the earlier part of the
+series and are scored on the most recent 20%. No k-fold or shuffling, because the strong
+temporal autocorrelation would place near-duplicate neighbours on both sides of a fold and
+leak the answer. The sequence models receive a 168 h causal context window immediately
+before the test set so they have history to condition on; only the held-out tail is scored.
+Every feature at time t uses values realised at t−1 or earlier, plus terms deterministic at
+t (clear-sky GHI, harmonic time).
 
 ### 2.4 Metrics
 
-Every model is scored the same way, on daytime hours only:
+All models are scored identically, on daytime hours only: MAE and RMSE (W/m² for GHI, °C
+for temperature), R², nRMSE (RMSE over the mean daytime value, for cross-city comparison),
+MBE (mean bias), and the forecast skill score
 
-- **MAE** and **RMSE** in W/m² (for GHI) or °C (for temperature),
-- **R²**, the fraction of variance explained,
-- **nRMSE**, RMSE divided by the mean daytime value,
-- **MBE**, the mean bias (positive means the model runs high),
-- **skill score** `S = 1 − RMSE_model / RMSE_reference`.
+S = 1 − RMSE_model / RMSE_reference.
 
-The skill score is the headline number. It says how much a model beats a sensible naive
-forecast. `S = 0` means no better than the reference; `S = 0.4` means 40% lower RMSE;
-negative means worse. For GHI the reference is smart persistence (see below). For
-temperature the reference is plain persistence, because temperature has no clear-sky
-model.
+The skill score is the headline. For GHI the reference is smart persistence (persist kt,
+rescale by the next hour's clear-sky GHI), the standard reference in the solar-forecasting
+literature. For temperature the reference is plain persistence, since temperature has no
+clear-sky model and no night to mask. MBE is reported because the clear-sky reference
+carries a large negative bias that the learned models neutralise (§3.1). MAPE is excluded;
+it is singular near sunrise and sunset where GHI approaches zero.
 
-We avoid MAPE. It blows up near sunrise and sunset where GHI is close to zero.
+### 2.5 The model lineup
 
-### 2.5 The models
+Four tiers, from naive to modern. The naive tier is the reference any solar-forecasting
+result is measured against, not an open question about whether ML is worthwhile.
 
-Four tiers, from naive to modern. The naive tier is not a research question (the
-instructor settled that AI is the method); it is the standard reference that any
-credible solar-forecasting result is measured against.
-
-| Tier | Models | What it is |
+| Tier | Models | Inductive bias |
 |---|---|---|
 | 0 — naive / statistical | persistence, smart (clear-sky) persistence, climatology | Reference forecasts |
-| 1 — classical ML | Ridge, Random Forest, Extra Trees, XGBoost, LightGBM, CatBoost | Engineered features + tree ensembles |
-| 2 — deep learning | LSTM, NHITS | Neural sequence models (PyTorch, via neuralforecast) |
-| 3 — foundation model | Chronos-2 | A ~120M-parameter time-series transformer (Amazon), used zero-shot with no training on our data |
+| 1 — classical ML | Ridge, Random Forest, Extra Trees, XGBoost, LightGBM, CatBoost | Axis-aligned partitioning over engineered lag / rolling / clear-sky features; strong on heteroscedastic tabular targets, no extrapolation |
+| 2 — deep learning | LSTM, NHITS | Learned sequence representations; NHITS uses multi-rate pooling and hierarchical interpolation for multi-scale seasonality |
+| 3 — foundation model | Chronos-2 | ~120M-parameter encoder-decoder, tokenises the series and forecasts in-context, zero-shot with no gradient step on our data |
 
-The three naive references:
-
-- **Persistence:** next hour equals this hour. Strong for slow signals, weak for GHI
-  because GHI changes fast around dawn and dusk.
-- **Smart (clear-sky) persistence:** persist the clear-sky index and rescale by the next
-  hour's clear-sky GHI. This carries the predictable solar cycle forward and is the
-  proper reference for solar forecasting.
-- **Climatology:** the historical average for that hour and season.
-
-Every model implements one interface, so the benchmark runs them all through one scoring
-harness. Adding a model is one file; it does not touch shared code.
+The three references: persistence carries this hour forward (strong for slow signals, weak
+for GHI which swings fast at the edges of the day); smart persistence carries the clear-sky
+index forward and rescales it by the next hour's clear-sky GHI; climatology returns the
+historical mean for that hour and season. The deep models run on PyTorch through
+neuralforecast (with `num_workers=0`, gradient clipping, and input standardisation to keep
+NHITS stable on Windows). Every model implements one `Forecaster` interface and is scored
+through one harness, so adding a model is a single file.
 
 ---
 
-## 3. Part A: forecasting GHI
+## 3. Forecasting GHI (Part A)
 
 ### 3.1 Karachi benchmark
 
@@ -194,46 +190,54 @@ Hour-ahead GHI, Karachi, five years, daytime hours only. Source:
 
 ![Hour-ahead GHI RMSE by model, Karachi](figures/fig1b_model_rmse.png)
 
-What this shows:
+**What this shows.** The five tree ensembles cluster within 3 W/m² of each other (41.6 to
+44.5 RMSE); the ordering among them is at the noise level, and Extra Trees' extra split
+randomisation gives it a marginal edge on this noisy target. The gap from the trees to
+NHITS (46.1) to Chronos-2 (48.6) is real but small, and the LSTM and the linear model trail
+at about 52. The best model cuts RMSE 40% below the smart-persistence reference (41.6
+versus 69.6).
 
-- The tree ensembles win. Extra Trees is best at 41.6 W/m² RMSE, a 40% lower error than
-  the smart-persistence reference (69.6). CatBoost is essentially tied.
-- NHITS (deep learning) is just behind the trees. Chronos-2, used with no training on
-  Karachi at all, still reaches 0.30 skill, ahead of the LSTM and the linear model.
-- Machine learning clearly helps at this horizon. That is the direct answer to "is AI
-  worth it here": yes, a 40% error reduction over the best naive method.
-- Why GHI is this predictable one hour ahead: most of the signal is the solar cycle,
-  which the models get for free through clear-sky GHI and the time encodings. One hour
-  ahead, clouds mostly persist. So the models are close to "smart persistence plus a
-  learned correction." Their main gain is removing the clear-sky reference's large
-  negative bias (its MBE is −43 W/m²; the trees sit near zero).
-- Honest scope: one hour ahead is the easy horizon. Day-ahead skill would be much lower.
-  We do not claim otherwise.
+The MBE column carries part of the story. Smart persistence sits at −43 W/m², the Haurwitz
+clear-sky underestimate propagated through the rescaling; every learned model collapses the
+magnitude of that bias below about 6 W/m². So a substantial share of their gain is bias
+removal layered on top of variance reduction, not variance reduction alone.
 
-### 3.2 Predicted versus actual
+The reason GHI is this forecastable one step ahead falls out of the decomposition
+GHI = GHI_cs·kt. GHI_cs is deterministic and supplied to the models directly; kt is
+strongly persistent at an hourly lag because cloud fields advect slowly relative to one
+hour. The conditional-mean predictor is therefore close to kt(t−1)·GHI_cs(t) plus a learned
+correction, and the headroom over smart persistence is exactly the learnable part of kt's
+hour-to-hour evolution. One hour ahead that headroom is worth 40%; at a day-ahead horizon
+it would be far smaller, because kt persistence decays.
 
-The best model's predictions against the measured GHI on the test set:
+### 3.2 Predicted against actual
+
+The best model's predictions against measured GHI on the test set:
 
 ![Predicted vs actual GHI, best model, Karachi](figures/fig5_pred_vs_actual.png)
 
-Points sit tight to the 1:1 line across the full range, with the spread widening at high
-irradiance where passing clouds make the largest absolute errors.
+Points sit tight to the 1:1 line across the full range. The scatter widens toward high
+irradiance, where broken cloud produces the largest absolute deviations; this is the
+heteroscedastic, cloud-driven residual that no model fully removes and that sets the skill
+ceiling.
 
 ### 3.3 What the models rely on
 
-Feature importances from the best tree model:
+Gini importances from the best tree model:
 
 ![Feature importance, best tree model](figures/fig7_feature_importance.png)
 
-The recent GHI lags and the clear-sky GHI carry most of the weight. The model leans on
-the deterministic solar cycle plus the last few hours of cloud behaviour, which matches
-the reading above.
+The recent GHI lags and the concurrent clear-sky GHI carry almost all the weight. The model
+leans on the deterministic solar geometry plus the last few hours of cloud state, which is
+the same reading the decomposition in §3.1 gives. The covariate lags (cloud, humidity) add
+a thin margin; the cyclical-time terms matter little once clear-sky GHI is present, because
+clear-sky GHI already encodes the phase.
 
-### 3.4 All seven cities
+### 3.4 The same benchmark across seven cities
 
-The same 12-model benchmark, run for every city, so the ranking can be read across the
-country. Source: `reports/benchmark_multicity.csv`. The table below is the skill score
-for each model in each city, with the mean across cities in the last column.
+The 12-model benchmark, rerun for every city, so the ranking can be read across the
+country's climates. Source: `reports/benchmark_multicity.csv`. Skill score per model per
+city, mean across cities in the last column:
 
 | Model | Quetta | Multan | Peshawar | Islamabad | Karachi | Lahore | Gilgit | Mean |
 |---|---|---|---|---|---|---|---|---|
@@ -255,24 +259,25 @@ for each model in each city, with the mean across cities in the last column.
 
 ![GHI RMSE by city and model](figures/fig10b_multicity_rmse.png)
 
-What this shows:
+**What this shows.** The ranking is invariant across all seven climates: a tree ensemble
+wins in every city (Extra Trees in four, CatBoost in two, LightGBM in one), and it is never
+the deep or foundation model. That invariance is the substantive result, because it shows
+the tree-ensemble advantage on hour-ahead GHI is not a Karachi artefact but holds from the
+coast to the high desert to the mountains.
 
-- The ranking is the same everywhere. A tree ensemble wins in all seven cities: Extra
-  Trees in four (Karachi, Multan, Quetta, Gilgit), CatBoost in two (Lahore, Peshawar),
-  LightGBM in one (Islamabad). It is never the deep or foundation model.
-- Chronos-2, with no local training, stays positive in every city (0.21 to 0.38) and
-  beats the LSTM. That is strong for an off-the-shelf model, but a locally trained tree
-  beats it everywhere. The honest headline: on this near-deterministic, short-horizon
-  target the foundation model is competitive out of the box but does not overtake
-  classical ML.
-- Predictability tracks climate. Skill is highest in Quetta (0.51, clear high-desert
-  skies) and lowest in Gilgit (0.37, complex mountain weather).
+Skill tracks the variance structure of kt rather than the absolute resource. Quetta's clear,
+low-variability high-desert skies give the most learnable signal (0.51); Gilgit's orographic
+convection gives the least (0.37). Absolute RMSE is actually lowest where mean GHI is lower
+(Multan 34.8, Quetta 33.3 W/m²), which is why nRMSE and skill, not raw RMSE, are the fair
+cross-city comparison. Chronos-2 stays positive everywhere zero-shot (0.21 to 0.38) and
+beats the trained LSTM in every city, which is a strong result for a model that never sees
+local data; a locally trained tree still beats it everywhere.
 
-### 3.5 How much data you need
+### 3.5 How much training data the models need
 
-Foundation and deep models are often pitched as the answer when you have little data.
-We tested that directly: fix the test set, vary the training size from one month to four
-years, and rerun. Source: `reports/data_efficiency_karachi.csv`. Skill by training size:
+Foundation and deep models are usually pitched as the answer when local history is short.
+We tested that directly: fix the test set, vary the training window from one month to four
+years, rerun. Source: `reports/data_efficiency_karachi.csv`. Skill by training size:
 
 | Model | 1 mo | 3 mo | 6 mo | 1 yr | 2 yr | 4 yr |
 |---|---|---|---|---|---|---|
@@ -285,23 +290,29 @@ years, and rerun. Source: `reports/data_efficiency_karachi.csv`. Skill by traini
 
 ![Data efficiency, RMSE vs training size](figures/fig8b_data_efficiency_rmse.png)
 
-What this shows:
+**What this shows.** Chronos-2's skill is flat at 0.30 because it never trains; that is its
+zero-shot operating point, invariant to local sample size, and it is the best model in the
+table at three months or less. XGBoost is below the naive reference at one month (skill
+−0.12), overfitting the short warm-up before it has seen enough of the kt distribution. The
+crossover is at roughly six to twelve months: the trees overtake only once they have about a
+year of history, then plateau near 0.41 by one to two years. NHITS reaches about 0.30 within
+six months, generalising from less data than the trees because its multi-rate structure
+captures the seasonal shape from fewer examples.
 
-- Chronos-2 is flat because it never trains. At one month it is the best model in the
-  table, and XGBoost is actually worse than the naive reference (skill −0.12).
-- NHITS needs only a few months to get close to its full skill.
-- The trees overtake once they have about a year of data, then pull ahead and stay
-  ahead.
-- The practical reading: with little local history, reach for the foundation or deep
-  model; with a year or more, train a tree. This is the second main result of Part A.
+The operational reading for a newly instrumented site is concrete: deploy Chronos-2 or
+NHITS from day one and switch to a trained tree after roughly a year of local data has
+accumulated. For a solar-EV operator rolling out chargers into cities with no local
+forecasting history, that means a usable forecast on day one without waiting to collect a
+training set.
 
 ---
 
-## 4. Forecasting temperature
+## 4. Forecasting temperature, and the model-target match
 
-S2Cool, the earlier project, predicted temperature as well as GHI, so we ran the same
-benchmark on hour-ahead 2 m air temperature in Karachi. The reference here is plain
-persistence (temperature has no clear-sky model and no night masking). Source:
+### 4.1 Temperature benchmark
+
+The earlier S2Cool project predicted temperature alongside GHI, so we ran the same tiers on
+hour-ahead 2 m air temperature in Karachi. The reference is plain persistence. Source:
 `reports/benchmark_temp_karachi.csv`.
 
 | Model | Tier | MAE (°C) | RMSE (°C) | R² | Skill |
@@ -322,31 +333,39 @@ persistence (temperature has no clear-sky model and no night masking). Source:
 
 ![Hour-ahead temperature RMSE by model](figures/fig11b_temp_rmse.png)
 
-The ranking flips. On temperature the modern models win: Chronos-2 first (0.60 skill,
-0.35 °C RMSE), NHITS second, and the trees behind them.
+### 4.2 Why the ranking inverts
 
-This is the most interesting finding in Part A, and it is why both targets are worth
-including. The best model depends on what kind of signal the target is:
+On temperature the ranking inverts. Chronos-2 leads (0.60 skill, 0.35 °C RMSE), NHITS is
+second (0.59), and the trees sit behind them (0.56 and down). R² is about 0.99 for every
+model, including ridge, which says the target is nearly deterministic.
 
-- Temperature is smooth and strongly periodic. Sequence models, and the foundation model
-  in particular, are built for exactly that shape and come out on top.
-- GHI is spiky and cloud-driven. The predictable cycle is easy; the hard part is the
-  cloud noise, where engineered lag features in a tree ensemble do best.
+The reason is the signal's spectral character. Temperature's variance is concentrated in the
+diurnal and seasonal harmonics, with high lag-1 autocorrelation and little broadband noise.
+A learned continuous sequence representation matches that smooth, periodic phase structure
+closely; the trees' piecewise-constant fits over hand-built lags are a coarser approximation
+to a smooth field and lose a few hundredths of skill to it. GHI is the opposite case: the
+deterministic part is easy, and the hard part is the high-frequency, regime-switching cloud
+residual, where a gradient-boosted tree over engineered cloud and lag features does best.
 
-So the foundation model is not a gimmick row in the table. It is genuinely the best model
-on the smooth target and competitive on the hard one. You only see that by testing both.
+The general statement for the paper is that model choice should follow the target's signal
+character rather than its recency. Smooth, strongly periodic targets such as temperature (or
+electrical load) favour sequence and foundation models; spiky, regime-switching targets with
+informative tabular covariates, such as irradiance under cloud, favour gradient-boosted
+trees. Running both targets through one harness is what exposes the crossover, and it is why
+the foundation model earns its place in the lineup rather than being a token modern row.
 
 ---
 
-## 5. Part B: solar resource and where to charge
+## 5. Solar resource and where to put a charger (Part B)
 
-Part B ranks locations by solar suitability and recommends sites for solar-powered EV
-charging. It works at two scales: between cities, and within one city (Karachi).
+Part B ranks locations by solar suitability and turns that into siting for solar-powered EV
+charging, first between cities, then within Karachi, and finally into delivered charging
+energy.
 
-### 5.1 Between cities
+### 5.1 Resource and EV potential across cities
 
-Five-year mean GHI per city, converted to an annual energy yield. Source:
-`reports/city_summary.csv`.
+Five-year mean GHI per city, converted to an annual energy yield on the horizontal plane.
+Source: `reports/city_summary.csv`.
 
 | City | Annual yield (kWh/m²/yr) | Daytime GHI (W/m²) | Seasonality (CV) |
 |---|---|---|---|
@@ -364,59 +383,62 @@ Five-year mean GHI per city, converted to an annual energy yield. Source:
 
 ![Seasonal GHI by city](figures/fig3_seasonal.png)
 
-What this shows:
+**What this shows.** Every city in the set delivers more than the national-average yield of
+Germany (about 1080 kWh/m²/yr) or the UK (about 1000), both of which run large EV-charging
+fleets on grids with a substantial solar share. The solar resource is therefore not the
+binding constraint on solar-EV charging anywhere in Pakistan; demand density, grid
+connection, and capital are. That reframes the siting question from "is there enough sun"
+to "where does the sun coincide with charging demand."
 
-- Quetta and Gilgit sit above Karachi, our study city, on raw solar resource. They are
-  the untapped higher-solar candidates. If EV adoption reaches them, they would make even
-  better hosts for solar charging than the coastal cities. Quetta in particular, at 2174
-  kWh/m²/yr, leads the country by a wide margin (its clear high-desert skies).
-- Karachi has the lowest seasonality of the seven (CV 0.178), meaning its solar supply is
-  the steadiest through the year. For a charging station that wants reliable output, low
-  seasonal swing matters alongside peak yield.
-- Even the least-sunny city here, Peshawar at 1650 kWh/m²/yr, is well above the
-  national-average yields of Germany (about 1080) and the UK (about 1000). Solar EV
-  charging is viable across the whole country.
-- The spread between cities (28% from Quetta to Peshawar) is the strong signal. It is
-  much larger than the within-city spread (a few percent), which is the next section.
+Two cities sit above the coastal study city on raw resource. Quetta leads the country by a
+wide margin (2174 kWh/m²/yr, the clear high-desert skies), and Gilgit (1960) edges Karachi.
+As EV adoption moves inland and north, these are the highest-yield hosts for solar charging,
+and a solar canopy there delivers proportionally more energy per square metre than the same
+canopy on the coast. They are the untapped potential the paper should flag.
 
-### 5.2 GHI through the day and the year
+Karachi earns the within-city study for a different reason: it has the lowest seasonality of
+the seven (CV 0.178), so its month-to-month solar supply is the steadiest in the country.
+For a charging station that quantity matters as much as peak yield, because a flat seasonal
+profile is a more uniform solar duty cycle and needs the smallest storage or grid buffer to
+hold a target uptime through the year. A coastal Karachi charger trades a little peak yield
+for the most predictable year-round supply.
 
-Two views of the Karachi GHI shape, both in local time:
+### 5.2 The diurnal and seasonal cycle
+
+Two views of the Karachi GHI field, both in local time:
 
 ![GHI by hour of day and month, Karachi](figures/fig2b_ghi_heatmap.png)
 
 ![Mean daily GHI and PV potential, Karachi](figures/fig3b_daily_profile.png)
 
-The heatmap shows the daily peak near 13:00 local time and the seasonal band: brightest
-in spring before the monsoon, dimmest during the summer monsoon. The daily profile is the
-average day, with the right axis reading GHI as PV power for a 1 kW-peak panel.
+The heatmap places the diurnal peak near 13:00 local and the seasonal band clearly: a
+pre-monsoon spring maximum and a summer monsoon minimum. The daily profile is the mean day,
+with the right axis reading GHI directly as PV power for a 1 kW-peak panel. For charging,
+the shape sets the natural solar window, roughly 09:00 to 16:00, within which a solar-only
+station meets demand directly and outside which it draws on storage or the grid.
 
-### 5.3 Within Karachi: the resource surface
+### 5.3 The intra-city resource surface
 
-The within-city heatmap samples GHI across the Karachi district on a 0.1° grid (29
-interior points) and interpolates a continuous surface, clipped to the real district
-boundary. The seaward edge is the coastline.
+The within-city surface samples GHI across the Karachi district on the 0.1° grid (29
+interior points) and interpolates a continuous field clipped to the real district boundary;
+the seaward edge is the coastline.
 
 ![Intra-city GHI gradient, Karachi](figures/fig2c_karachi_grid_heatmap.png)
 
-GHI runs from about 412 W/m² in the urban core to 440 in the rural north. The gradient is
-real but small, on the order of 5%, which is the resolution limit discussed in §1.4. Note
-that the densest, most built-up parts of the city read slightly lower than the open land
-around them, because the urban core carries more aerosol and humidity that cut the
-surface irradiance.
+GHI runs from about 412 W/m² in the urban core to 440 in the rural north, a ~5% range that
+is real but at the resolution floor of §1.4. The densest built-up cells read slightly lower
+than the open land around them, consistent with the higher aerosol and humidity loading over
+the urban core depressing surface irradiance. The gradient is monotonic from the coast
+inland, which is what makes the northern and western fringe the resource-favoured part of
+the city.
 
 ### 5.4 The suitability index
 
-We rank Karachi's districts with a transparent weighted index, not a black box, so the
-instructor can explain every term. It blends three things, each normalised across the
-sites:
-
-- **yield** (annual GHI), weight 0.60,
-- **consistency** (low seasonal variation), weight 0.25,
-- **coolness** (lower air temperature, since hot panels lose efficiency), weight 0.15.
-
-Yield dominates, so the ranking is mostly resource-driven, with consistency and coolness
-as tie-breakers. Source: `reports/site_suitability_karachi.csv`.
+The districts are ranked by a transparent weighted index, not a black box, so every term is
+explainable. It blends three normalised components: annual GHI yield (weight 0.60), seasonal
+consistency (0.25), and panel coolness (0.15, since a hotter cell loses efficiency). Yield
+dominates, so the ranking is resource-led with consistency and coolness as tie-breakers.
+Source: `reports/site_suitability_karachi.csv`.
 
 | Site | Annual yield (kWh/m²/yr) | Daytime GHI (W/m²) | Mean temp (°C) | Suitability |
 |---|---|---|---|---|
@@ -431,46 +453,55 @@ as tie-breakers. Source: `reports/site_suitability_karachi.csv`.
 
 ![Within-city site suitability, Karachi](figures/fig4b_site_suitability.png)
 
-The northern and western urban fringe (Gadap, then SITE) ranks highest. It has the most
-GHI of the built-up districts and runs slightly cooler.
+**What this shows.** The northern and western fringe (Gadap, then SITE) tops the ranking: it
+holds the most GHI of the built-up districts and runs marginally cooler. The spread in raw
+yield across the districts is only about 2% (1950 to 1990 kWh/m²/yr), so the index is really
+separating sites on small, consistent differences; the suitability scores spread wider than
+the underlying yields because each component is min-max normalised across only eight sites.
+The practical content is the ordering, not the gaps: Gadap and SITE are resource-favoured,
+the southern coastal cluster is close behind, and within that cluster the coolness term
+decides.
 
-### 5.5 Recommended EV-charging sites
+### 5.5 Recommended charging sites
 
-The recommendation map puts the ranked sites on top of the resource surface. The top
-three are starred.
+The recommendation map places the ranked sites on the resource surface, top three starred.
 
 ![Recommended solar-EV charging sites, Karachi](figures/fig6_ev_locations.png)
 
-| Rank | Site | Coordinates (lat, lon) | Suitability |
-|---|---|---|---|
-| 1 | Gadap | 25.050, 67.110 | 0.800 |
-| 2 | SITE | 24.910, 66.990 | 0.670 |
-| 3 | Clifton | 24.810, 67.030 | 0.275 |
+| Rank | Site | Coordinates (lat, lon) | Suitability | Charging-relevant character |
+|---|---|---|---|---|
+| 1 | Gadap | 25.050, 67.110 | 0.800 | Northern urban fringe, growing, lower density, most resource |
+| 2 | SITE | 24.910, 66.990 | 0.670 | Industrial estate, heavy daytime vehicle flow, good resource |
+| 3 | Clifton | 24.810, 67.030 | 0.275 | Dense commercial coast, high demand, coolest site |
 
-Gadap and SITE are the year-round picks. Clifton, on the south coast, ranks third on the
-strength of its coolness term even though its raw GHI is a little lower, which matters
-more in summer (see §5.7).
+Gadap and SITE are the resource-led year-round picks. Clifton ranks third on the strength of
+its coolness term despite slightly lower raw GHI, and it has the strongest charging demand of
+the three as a dense commercial district, which is the demand-side point developed next.
 
-### 5.6 Resource versus demand: why not the sunniest land?
+### 5.6 Why the sunniest ground is not a charging site
 
-The resource surface in §5.3 covers the whole district, and the sunniest spots are not in
-the city at all. The rural north (about 440 W/m²) and the open south-west coast near Cape
-Monze and the Hub river mouth (about 435 W/m²) read higher than the urban core (411 to
-419). Those are genuine ERA5 readings, not artefacts.
+The resource surface in §5.3 covers the whole district, and its brightest cells are not in
+the city. The rural north (about 440 W/m²) and the open south-west coast near Cape Monze and
+the Hub river mouth (about 435) read higher than the urban core (411 to 419), and those are
+genuine ERA5 readings. A charger does not go there, because those cells are open coast,
+hills, and barren hinterland with little population, no arterial roads, and no grid. An EV
+charging station is sited by demand first: it belongs on commercial corridors and dense
+districts where vehicles actually dwell. The sunniest ground suits a utility-scale solar
+farm feeding the grid, not a forecourt charger.
 
-We do not put a charger there, because those areas are not urban. They are open coast,
-hills, and barren hinterland with little population, road access, or grid. An EV charging
-station follows demand, so the candidates are the eight built-up districts. The sunniest
-land suits a utility-scale solar farm, not a car charger. The recommendation map shows
-both layers at once: the full-city resource underneath, and the urban sites on top, which
-is why the brightest zones sit there without a star.
+This is the core siting tension, and the recommendation map shows both layers at once. The
+resource surface underneath identifies where the energy is; the urban site markers identify
+where the demand is; and the right charger sits where the two overlap best, which is the
+sunnier northern and western fringe of the built-up area rather than the resource peak. The
+~5% intra-city resource gradient is small enough that demand and grid access dominate the
+final choice, with the suitability ranking acting as the resource tie-breaker among
+otherwise comparable urban candidates.
 
-### 5.7 Season by season
+### 5.7 Suitability through the four seasons
 
-The instructor asked for the year split into four seasons with the sites ranked through
-them. We compute the suitability index inside each meteorological season (winter
-December–February, spring March–May, summer June–August, autumn September–November).
-Source: `reports/seasonal_site_suitability_karachi.csv`.
+The year is split into the four meteorological seasons (winter DJF, spring MAM, summer JJA,
+autumn SON) and the suitability index is recomputed inside each, so the seasonal movement is
+visible. Source: `reports/seasonal_site_suitability_karachi.csv`.
 
 Mean daytime GHI by site and season (W/m²):
 
@@ -485,7 +516,7 @@ Mean daytime GHI by site and season (W/m²):
 | Gulshan-e-Iqbal | 397 | 502 | 366 | 408 |
 | North Nazimabad | 397 | 502 | 366 | 408 |
 
-Suitability by site and season (0–1, within each season):
+Suitability by site and season (0–1, normalised within each season):
 
 | Site | Winter | Spring | Summer | Autumn |
 |---|---|---|---|---|
@@ -500,29 +531,46 @@ Suitability by site and season (0–1, within each season):
 
 ![Seasonal solar resource and site suitability, Karachi](figures/fig9_seasonal_sites.png)
 
-What this shows:
+**What this shows.** The seasonal cycle is strong and matters directly for charger sizing.
+Spring, before the monsoon, is brightest everywhere at about 500 to 507 W/m²; the summer
+monsoon is dimmest at 366 to 378, a 25% drop; winter and autumn sit between. A solar-only
+charger therefore sees its supply swing by about a quarter between spring and summer, which
+is the gap that storage or a grid tie has to cover if the station is to hold throughput
+year-round. Karachi's low inter-annual seasonality (§5.1) keeps that swing smaller than it
+would be at an inland site.
 
-- There is a strong seasonal cycle. Spring, before the monsoon, is brightest everywhere
-  at about 500 to 507 W/m². Summer, during the monsoon, is dimmest at 366 to 378, a 25%
-  drop. Winter and autumn sit in between.
-- The ranking is mostly stable, but it flips in summer. Gadap leads in winter, spring,
-  and autumn (suitability 0.75, 0.95, 1.00). In summer the cooler coastal and western
-  sites take over: SITE at 0.72 and Clifton at 0.55 overtake Gadap at 0.65. Clifton jumps
-  from 0.25 in winter to 0.55 in summer because the coolness term matters most when it is
-  hottest.
-- Practical reading: Gadap or SITE is the year-round choice; if you specifically want to
-  hold up through the hot monsoon months, the coastal sites recover ground.
+The ranking is mostly stable but it inverts in summer. Gadap leads in winter, spring, and
+autumn (0.75, 0.95, 1.00); in summer the cooler coastal and western sites take over, with
+SITE at 0.72 and Clifton at 0.55 overtaking Gadap at 0.65. Clifton climbs from 0.25 in
+winter to 0.55 in summer because the coolness term carries most weight when ambient
+temperature is highest and cell derating bites hardest. For siting this means the
+resource-optimal location is itself mildly season-dependent: the northern fringe for the
+dry, bright three-quarters of the year, the coast for the hot monsoon quarter when a panel's
+thermal losses are largest.
 
-### 5.8 GHI to power, and the heat penalty
+### 5.8 From irradiance to delivered charge
 
-To turn irradiance into something an EV charger can use, we apply a simple, transparent
-PV model: power scales linearly with GHI through a module efficiency (0.20) and a
-performance ratio (0.80) that covers inverter, thermal, and soiling losses.
+To make the resource concrete for a charging operator we apply a transparent PV model,
+power = GHI × area × η × PR with module efficiency η = 0.20 and performance ratio PR = 0.80,
+and a NOCT cell-temperature correction that derates output by about 0.4% per °C above 25 °C.
 
-PV panels also lose efficiency as they heat up, about 0.4% per °C above 25 °C. Hot air
-and strong sun make hot panels, so we add a temperature correction (an NOCT cell-
-temperature model) and measure how much annual energy each Karachi site loses to heat.
-Source: `reports/temp_derating_karachi.csv`.
+Per square metre of array at the top-ranked site (Gadap, 1990 kWh/m²/yr incident), the model
+delivers 1990 × 0.20 × 0.80 ≈ 318 kWh/m²/yr of DC electricity, falling to about 286
+kWh/m²/yr (0.78 kWh/m²/day) after the ~10% heat derate below. A realistic 200 m² solar
+canopy over the charging bays therefore yields roughly 57 MWh/yr, about 157 kWh on the mean
+day. Against a 50 kWh EV battery that is about three full charges per day from solar alone,
+or on the order of 1,000 vehicle-kilometres per day at 0.16 kWh/km, before any grid support.
+
+The seasonal swing in §5.7 carries through to delivered energy, though longer summer days
+offset part of the lower midday irradiance, so the daily total moves by roughly a fifth
+across the year rather than the full quarter seen in midday GHI. The same canopy gives around
+3.5 charges on a bright spring day and closer to 3 in the monsoon, so a solar-only station
+sized to the spring peak is undersupplied in summer. Sizing the array to the summer floor, or
+pairing it with a battery buffer or a grid trickle, is what holds a constant charging
+throughput across the year.
+
+The cell-heating derate is the temperature target paying off in the power domain. Source:
+`reports/temp_derating_karachi.csv`.
 
 | Site | Mean temp (°C) | Annual energy lost to heat |
 |---|---|---|
@@ -535,63 +583,70 @@ Source: `reports/temp_derating_karachi.csv`.
 | North Nazimabad | 26.5 | 9.88% |
 | Gadap | 26.1 | 10.07% |
 
-Hot Karachi loses about 9 to 10% of its annual PV energy to cell heating. The cooler
-coastal sites lose the least (Clifton at 9.40%), and the hot inland winner Gadap loses
-the most (10.07%). So Gadap's GHI lead is partly clawed back by heat. This is the
-physical basis for the coolness term in the suitability index and for the summer ranking
-flip in §5.7.
+Hot Karachi loses about 9 to 10% of its annual PV energy to cell heating, which at 200 m² is
+roughly a third of a charge per day given away to temperature. The cooler coastal sites keep
+the most of it (Clifton at 9.40%) and the hot inland resource winner Gadap the least (10.07%),
+which is the physical basis for the coolness term in the suitability index and for the summer
+ranking flip in §5.7. A reflective or ventilated mounting that lowers cell temperature
+recovers part of this loss, and a canopy form factor over the bays has the side benefit of
+shading vehicles in Karachi's heat.
+
+### 5.9 What this means for a Karachi solar-EV station
+
+Pulling Part B together: the binding levers for a Karachi solar-EV charger are array area
+and demand-led siting, not the ~5% intra-city resource gradient. The resource is ample
+everywhere in the city and far above European baselines, so the design choices that move the
+numbers are how large a canopy the site allows and how well it sits in the charging demand.
+Among the built-up districts the sunnier, cooler northern and western fringe (Gadap, SITE)
+is the resource-favoured pick for a year-round station, while the dense coastal commercial
+districts (Clifton, with Korangi and DHA nearby) trade a little resource for stronger demand
+and the best summer performance. A practical specification reads: choose a high-demand
+built-up district on the northern or coastal fringe, size the canopy to the summer-monsoon
+floor with a battery or grid buffer for the spring surplus, and expect on the order of 0.8
+kWh per m² of array per day delivered after thermal losses.
 
 ---
 
 ## 6. Reproducibility and engineering
 
-The project is a proper package, not a notebook, so several people can work on it and
-every figure can be regenerated.
+The project is a package rather than a notebook, so several contributors can work in
+parallel and every figure regenerates from cached data.
 
-- **Layout:** the importable package lives in `src/solarpredict/` (data, features,
-  models, evaluation, solar, siting, viz). The scripts that produce the figures and
-  tables live in `pipelines/`. Outputs land in `reports/`.
-- **Patterns:** models register themselves behind one `Forecaster` interface, so adding
-  one is a single file. Data sits behind a `DataRepository` so the source can be swapped.
-  Configuration is centralised, not hard-coded.
-- **Quality gate:** ruff (lint and format), mypy (types), and pytest run in CI on every
-  push. Pinned tool versions keep CI and local in step.
-- **Boundaries:** the maps use real province and district outlines (geoBoundaries),
-  committed under `assets/geo/` so the figures render offline and reproducibly.
+- **Layout.** The importable package is `src/solarpredict/` (data, features, models,
+  evaluation, solar, siting, viz). The scripts that produce the figures and tables are in
+  `pipelines/`; outputs land in `reports/`.
+- **Patterns.** Models register behind one `Forecaster` interface, so adding one is a single
+  file with no edits to shared code. Data sits behind a `DataRepository` so the source is
+  swappable. Configuration is centralised.
+- **Quality gate.** ruff (lint and format), mypy (types), and pytest run in CI on every
+  push, with pinned tool versions so CI and local stay in step.
+- **Maps.** The figures draw real province and district outlines (geoBoundaries), committed
+  under `assets/geo/` so they render offline; the intra-city surface is interpolated with
+  scipy and masked to the district polygon.
 
-To regenerate everything, run the pipelines in `pipelines/` (each is one command). They
-read from the Parquet cache, so after the first data pull they need no network.
+Each pipeline is one command and reads from the Parquet cache, so after the first data pull
+the whole set regenerates with no network.
 
 ---
 
 ## 7. Limitations
 
-- ERA5 is a reanalysis at roughly 25 km. It captures the regional resource and the
-  coastal gradient, but not street-level microclimate. The within-city differences are
-  genuinely small, and we report them as such.
-- One hour ahead is the easy horizon. Skill at day-ahead would be substantially lower.
-  The forecasting results should not be read as day-ahead performance.
-- The reanalysis is not a ground measurement. The numbers are internally consistent and
-  physically sensible, but a sensor is needed to confirm them on the ground.
-- The PV conversion is deliberately simple (linear in GHI plus a temperature correction).
-  It is meant to rank sites and give an order-of-magnitude energy figure, not to size a
-  specific installation.
+- ERA5 is a reanalysis at a ~25 km effective scale. It resolves the regional resource and
+  the coastal gradient but not sub-cell microclimate, so the intra-city differences are
+  small (~5%) and the within-city work is a ranking of coarse cells, not of neighbourhoods.
+- One hour ahead is the easy horizon. Day-ahead skill would be materially lower because the
+  clear-sky-index persistence the models exploit decays with lead time, so these numbers
+  should not be read as day-ahead performance.
+- The reanalysis is internally consistent and physically sensible but is not validated
+  against a local pyranometer.
+- The PV conversion is first-order (linear in GHI plus a NOCT temperature derate). It is
+  built to rank sites and give an order-of-magnitude energy and charging figure, not to size
+  a specific installation, which would need tilt, orientation, soiling, and a measured
+  module model.
 
 ---
 
-## 8. Future work
-
-- A physical GHI and temperature sensor (a pyranometer, or a low-cost light-and-
-  temperature module on a microcontroller) to validate the ERA5 values on the ground. The
-  instructor has offered to fund this.
-- Longer forecast horizons (day-ahead), where the gap between the models should widen and
-  the modern models may matter more.
-- A second city's within-city study, and a live dashboard surfacing the model comparison
-  and the suitability ranking.
-
----
-
-## 9. Figure and table index
+## 8. Figure and table index
 
 Figures (`reports/figures/`):
 
