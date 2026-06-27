@@ -33,6 +33,9 @@ htmlcov/
 lightning_logs/
 catboost_info/
 
+# Generated report PDFs (shareable artifact, not source)
+*.pdf
+
 # OS / editor
 .DS_Store
 Thumbs.db
