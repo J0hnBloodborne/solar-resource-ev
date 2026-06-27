@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .figures import (
+    benchmark_city_heatmap,
     city_ghi_map,
     city_ranking_bar,
     daily_ghi_profile,
@@ -19,6 +20,7 @@ from .figures import (
 )
 
 __all__ = [
+    "benchmark_city_heatmap",
     "city_ghi_map",
     "city_ranking_bar",
     "daily_ghi_profile",

@@ -499,3 +499,50 @@ def seasonal_site_heatmap(
     fig.suptitle(f"Seasonal solar resource & site suitability — {city}", fontsize=13)
     fig.tight_layout()
     return _save(fig, path)
+
+
+def benchmark_city_heatmap(
+    table: pd.DataFrame,
+    *,
+    path: str | Path,
+    metric: str = "skill",
+    model_order: list[str] | None = None,
+) -> Path:
+    """Heatmap of ``metric`` over (city, model) — the 'grouped by city' view.
+
+    Cities are ordered by their mean metric (best first); models keep the supplied
+    tier order. For skill the colour scale is diverging about 0 (the reference).
+    """
+    import matplotlib.colors as mcolors
+
+    models = model_order or list(dict.fromkeys(table["model"]))
+    cities = (
+        table.groupby("city")[metric]
+        .mean()
+        .sort_values(ascending=(metric != "skill"))
+        .index.tolist()
+    )
+    pivot = table.pivot(index="city", columns="model", values=metric).reindex(
+        index=cities, columns=models
+    )
+    arr = pivot.to_numpy(float)
+
+    if metric == "skill":
+        vmax = max(float(np.nanmax(np.abs(arr))), 0.05)
+        norm: Any = mcolors.TwoSlopeNorm(vcenter=0.0, vmin=-vmax, vmax=vmax)
+        cmap, label = "RdYlGn", "Forecast skill vs smart persistence"
+    else:
+        norm = None
+        cmap, label = "viridis_r", metric.upper()
+
+    fig, ax = plt.subplots(figsize=(1.0 * len(models) + 3, 0.6 * len(cities) + 2))
+    image = ax.imshow(arr, aspect="auto", cmap=cmap, norm=norm)
+    ax.set_xticks(range(len(models)))
+    ax.set_xticklabels(models, rotation=45, ha="right")
+    ax.set_yticks(range(len(cities)))
+    ax.set_yticklabels(cities)
+    _annotate_cells(ax, image, arr, "%.2f")
+    fig.colorbar(image, ax=ax, label=label, shrink=0.8)
+    ax.set_title(f"Hour-ahead GHI — {metric} by city and model")
+    fig.tight_layout()
+    return _save(fig, path)
