@@ -144,7 +144,32 @@ Talking points:
 - fig5_pred_vs_actual — predicted vs actual, best model.
 - fig7_feature_importance — best tree's features.
 - fig8_data_efficiency_skill / fig8b_..._rmse — scarce-data story.
-- fig6 (EV-locations map) + the intra-Karachi heatmap/ranking — to build.
+- fig2b_ghi_heatmap (hour x month) + fig3b_daily_profile (GHI/PV, local time).
+- fig2c_karachi_grid_heatmap — continuous GHI surface clipped to the real Karachi
+  district outline (interpolated from a ~0.1 deg interior grid).
+- fig4b_site_suitability (within-city ranking) + fig6_ev_locations (recommended sites
+  over the GHI surface).
+
+## Maps (real geography, geoBoundaries gbOpen PAK ADM1/ADM2)
+- Inter-city (fig2) draws Pakistan's province outlines + national border; intra-city
+  figures draw the true Karachi district polygon (coastline = the seaward edge).
+- Boundaries committed under assets/geo/ so figures render offline + reproducibly
+  (geopandas + shapely; surface interpolation via scipy.griddata, masked to the polygon).
+
+## Within-city siting & the resource-vs-demand point (addresses "why not SW Karachi?")
+- The GHI surface covers the WHOLE district. The sunniest zones are genuinely the
+  rural north (~440 W/m^2) and the open south-west coast (~435 W/m^2, e.g. Cape Monze /
+  Hub-river mouth) — both real ERA5 readings, ~5% above the 411-419 W/m^2 urban core
+  (the dense city has more aerosol/humidity loading that depresses surface GHI).
+- We do NOT site a charger in those high-GHI zones because they are non-urban: open
+  coast, hills, and barren hinterland with little population, road access, or grid.
+  An EV charging station follows demand, so candidates are the 8 built-up districts
+  (Clifton, DHA, Korangi, Malir, Gulshan, North Nazimabad, SITE, Gadap). Among those,
+  the ranking still favours the northern/western urban fringe (Gadap, SITE), which is
+  both higher-resource and cooler.
+- Framing for the paper: solar *resource* peaks outside the urban core (those areas
+  suit utility-scale solar farms); EV *siting* trades a little resource for demand and
+  accessibility. fig6 shows both at once — full-city resource surface + urban sites.
 
 ## Caveats / honesty
 - ERA5 is reanalysis at 9–25 km: captures city resource + coastal gradient, not

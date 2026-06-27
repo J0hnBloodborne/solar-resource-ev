@@ -39,7 +39,7 @@ fm = ["chronos-forecasting>=2.0"]
 # Open-Meteo ingestion (M1) — official client + caching + backoff
 ingest = ["openmeteo-requests", "requests-cache", "retry-requests"]
 # Figures
-viz = ["matplotlib", "plotly", "seaborn"]
+viz = ["matplotlib", "plotly", "seaborn", "geopandas", "shapely"]
 # Developer tooling (ruff pinned so CI matches local — avoids lint drift)
 dev = ["ruff==0.15.19", "mypy", "pytest", "pytest-cov", "pre-commit"]
 

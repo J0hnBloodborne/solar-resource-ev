@@ -8,6 +8,7 @@ figures (naive/statistical, classical ML, deep learning, foundation model).
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import matplotlib
 
@@ -38,6 +39,31 @@ def _save(fig: plt.Figure, path: str | Path) -> Path:
     fig.savefig(out, dpi=150, bbox_inches="tight")
     plt.close(fig)
     return out
+
+
+def _geo_aspect(ax: plt.Axes, lat: float) -> None:
+    """Stretch the y/x aspect so 1 deg lon and 1 deg lat read at true scale."""
+    ax.set_aspect(1.0 / float(np.cos(np.deg2rad(lat))))
+
+
+def _city_surface(
+    grid: pd.DataFrame, geom: Any, resolution: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Interpolate point GHI to a raster and mask it to the city polygon."""
+    import shapely
+    from scipy.interpolate import griddata
+
+    minx, miny, maxx, maxy = geom.bounds
+    xs = np.linspace(minx, maxx, resolution)
+    ys = np.linspace(miny, maxy, resolution)
+    gx, gy = np.meshgrid(xs, ys)
+    pts = grid[["longitude", "latitude"]].to_numpy()
+    vals = grid["mean_ghi_day"].to_numpy(float)
+    surf = griddata(pts, vals, (gx, gy), method="cubic")
+    fill = griddata(pts, vals, (gx, gy), method="nearest")
+    surf = np.where(np.isnan(surf), fill, surf)
+    inside = shapely.contains_xy(geom, gx.ravel(), gy.ravel()).reshape(gx.shape)
+    return xs, ys, np.where(inside, surf, np.nan)
 
 
 def model_comparison_bar(
@@ -155,33 +181,42 @@ def city_ranking_bar(
 def city_ghi_map(
     summary: pd.DataFrame, *, path: str | Path, highlight: tuple[str, ...] = ()
 ) -> Path:
-    """Geographic scatter of cities (lon/lat) coloured by annual GHI yield."""
+    """Pakistan map (province outlines) with cities coloured by annual GHI yield."""
+    from .geo import country, provinces
+
     chosen = set(highlight)
-    fig, ax = plt.subplots(figsize=(8, 7))
+    prov, pak = provinces(), country()
+    fig, ax = plt.subplots(figsize=(8, 9))
+    prov.plot(ax=ax, color="#f6f6f3", edgecolor="#c2c2c2", linewidth=0.6, zorder=1)
+    pak.boundary.plot(ax=ax, color="#444444", linewidth=1.1, zorder=2)
     scatter = ax.scatter(
         summary["longitude"],
         summary["latitude"],
         c=summary["annual_kwh_m2"],
-        s=220,
+        s=240,
         cmap="YlOrRd",
         edgecolor="black",
-        zorder=3,
+        linewidth=0.8,
+        zorder=4,
     )
     for _, row in summary.iterrows():
-        weight = "bold" if row["city"] in chosen else "normal"
+        picked = row["city"] in chosen
         ax.annotate(
             f"{row['city']}\n{row['annual_kwh_m2']:.0f}",
             (row["longitude"], row["latitude"]),
             textcoords="offset points",
             xytext=(7, 6),
             fontsize=8,
-            fontweight=weight,
+            fontweight="bold" if picked else "normal",
+            color="#7a0177" if picked else "black",
+            zorder=5,
         )
-    fig.colorbar(scatter, ax=ax, label="Annual GHI yield (kWh/m$^2$/yr)")
+    fig.colorbar(scatter, ax=ax, label="Annual GHI yield (kWh/m$^2$/yr)", shrink=0.7)
     ax.set_xlabel("Longitude")
     ax.set_ylabel("Latitude")
     ax.set_title("Solar resource across Pakistani cities")
-    ax.grid(alpha=0.2)
+    _geo_aspect(ax, 30.0)
+    ax.grid(alpha=0.15)
     return _save(fig, path)
 
 
@@ -230,35 +265,85 @@ def site_suitability_bar(
 
 
 def ev_locations_map(
-    df: pd.DataFrame, *, path: str | Path, city: str = "Karachi", top: int = 3
+    df: pd.DataFrame,
+    *,
+    path: str | Path,
+    city: str = "Karachi",
+    top: int = 3,
+    grid: pd.DataFrame | None = None,
 ) -> Path:
-    """Map of sites coloured by suitability; top-N starred as recommended."""
+    """Karachi outline with the continuous GHI surface (if ``grid`` given) and the
+    suitability-ranked districts overlaid; top-N starred as recommended.
+
+    The surface covers the whole district, so the sunniest zones (rural north,
+    open south-west coast) are visible even though chargers are only sited in the
+    built-up districts where EV demand and road/grid access exist.
+    """
+    from .geo import city_outline
+
+    outline = city_outline(city)
     ranked = df.sort_values("suitability", ascending=False).reset_index(drop=True)
-    fig, ax = plt.subplots(figsize=(8, 7))
-    scatter = ax.scatter(
-        ranked["longitude"],
-        ranked["latitude"],
-        c=ranked["suitability"],
-        s=260,
-        cmap="YlOrRd",
-        edgecolor="black",
-        zorder=3,
-    )
+    rec = ranked.index < top
+    fig, ax = plt.subplots(figsize=(8, 8))
+
+    if grid is not None:
+        xs, ys, surf = _city_surface(grid, outline.union_all(), 320)
+        mesh = ax.pcolormesh(xs, ys, surf, cmap="YlOrRd", shading="auto", zorder=1)
+        fig.colorbar(mesh, ax=ax, label="Mean daytime GHI (W/m$^2$)", shrink=0.7)
+        outline.boundary.plot(ax=ax, color="#333333", linewidth=1.0, zorder=2)
+        ax.scatter(
+            ranked.loc[~rec, "longitude"],
+            ranked.loc[~rec, "latitude"],
+            marker="o",
+            s=90,
+            color="white",
+            edgecolor="black",
+            linewidth=1.0,
+            zorder=4,
+        )
+        ax.scatter(
+            ranked.loc[rec, "longitude"],
+            ranked.loc[rec, "latitude"],
+            marker="*",
+            s=420,
+            color="white",
+            edgecolor="black",
+            linewidth=1.1,
+            zorder=5,
+        )
+    else:
+        outline.plot(
+            ax=ax, color="#f1f1ee", edgecolor="#555555", linewidth=1.1, zorder=1
+        )
+        scatter = ax.scatter(
+            ranked["longitude"],
+            ranked["latitude"],
+            c=ranked["suitability"],
+            s=300,
+            cmap="YlOrRd",
+            edgecolor="black",
+            linewidth=0.8,
+            zorder=4,
+        )
+        fig.colorbar(scatter, ax=ax, label="Suitability score", shrink=0.7)
+
     for i, row in ranked.iterrows():
-        recommended = i < top
         ax.annotate(
-            f"{'★ ' if recommended else ''}{row['site']}",
+            f"{'★ ' if i < top else ''}{row['site']}",
             (row["longitude"], row["latitude"]),
             textcoords="offset points",
             xytext=(7, 5),
             fontsize=9,
-            fontweight="bold" if recommended else "normal",
+            fontweight="bold" if i < top else "normal",
+            zorder=6,
         )
-    fig.colorbar(scatter, ax=ax, label="Suitability score")
     ax.set_xlabel("Longitude")
     ax.set_ylabel("Latitude")
     ax.set_title(f"Recommended solar-EV charging sites — {city} (top {top} starred)")
-    ax.grid(alpha=0.2)
+    minx, miny, maxx, maxy = outline.total_bounds
+    ax.set_xlim(minx - 0.03, maxx + 0.03)
+    ax.set_ylim(miny - 0.03, maxy + 0.03)
+    _geo_aspect(ax, float(ranked["latitude"].mean()))
     return _save(fig, path)
 
 
@@ -328,18 +413,30 @@ def daily_ghi_profile(
 
 
 def grid_ghi_heatmap(
-    grid: pd.DataFrame, *, path: str | Path, city: str = "Karachi"
+    grid: pd.DataFrame,
+    *,
+    path: str | Path,
+    city: str = "Karachi",
+    resolution: int = 320,
 ) -> Path:
-    """2-D heatmap of mean daytime GHI across a city's ~7 km sampling grid."""
-    pivot = grid.pivot_table(
-        index="latitude", columns="longitude", values="mean_ghi_day"
+    """Smooth GHI surface interpolated from sample points and clipped to the
+    city's real district boundary (the seaward edge shows the coastline)."""
+    from .geo import city_outline
+
+    outline = city_outline(city)
+    geom = outline.union_all()
+    _, miny, _, maxy = geom.bounds
+    xs, ys, surf = _city_surface(grid, geom, resolution)
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+    mesh = ax.pcolormesh(xs, ys, surf, cmap="YlOrRd", shading="auto")
+    outline.boundary.plot(ax=ax, color="#333333", linewidth=1.1, zorder=3)
+    ax.scatter(
+        grid["longitude"], grid["latitude"], s=7, color="black", alpha=0.35, zorder=4
     )
-    fig, ax = plt.subplots(figsize=(8, 7))
-    mesh = ax.pcolormesh(
-        pivot.columns, pivot.index, pivot.to_numpy(), cmap="YlOrRd", shading="auto"
-    )
-    fig.colorbar(mesh, ax=ax, label="Mean daytime GHI (W/m$^2$)")
+    fig.colorbar(mesh, ax=ax, label="Mean daytime GHI (W/m$^2$)", shrink=0.7)
     ax.set_xlabel("Longitude")
     ax.set_ylabel("Latitude")
-    ax.set_title(f"Intra-city GHI gradient — {city} (~7 km grid)")
+    ax.set_title(f"Intra-city GHI gradient — {city}")
+    _geo_aspect(ax, float((miny + maxy) / 2))
     return _save(fig, path)
