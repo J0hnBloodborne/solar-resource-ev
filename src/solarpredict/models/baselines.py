@@ -28,7 +28,8 @@ class PersistenceForecaster(Forecaster):
         return self
 
     def predict(self, test: ForecastData) -> np.ndarray:
-        shifted = test.frame.groupby(test.series_col)[test.target_col].shift(1)
+        grouped = test.frame.groupby(test.series_col)[test.target_col]
+        shifted = grouped.shift(test.horizon)
         preds = shifted.to_numpy(dtype=float).copy()
         missing = np.isnan(preds)
         preds[missing] = test.frame[test.target_col].to_numpy(dtype=float)[missing]
@@ -59,12 +60,17 @@ class SmartPersistenceForecaster(Forecaster):
             )
         cs = df["clearsky_ghi"].to_numpy(dtype=float)
         kt = clear_sky_index(df[test.target_col].to_numpy(dtype=float), cs)
-        # .copy() because pandas 3.0 can return a read-only array.
+        # .copy() because pandas 3.0 can return a read-only array. shift by the
+        # horizon so day-ahead persists yesterday's clear-sky index, not last hour's.
         kt_prev = (
-            df.assign(_kt=kt).groupby(test.series_col)["_kt"].shift(1).to_numpy().copy()
+            df.assign(_kt=kt)
+            .groupby(test.series_col)["_kt"]
+            .shift(test.horizon)
+            .to_numpy()
+            .copy()
         )
         missing = np.isnan(kt_prev)
-        kt_prev[missing] = kt[missing]  # first step of each series -> persist itself
+        kt_prev[missing] = kt[missing]  # first steps of each series -> persist itself
         return np.clip(kt_prev * cs, 0.0, None)
 
 

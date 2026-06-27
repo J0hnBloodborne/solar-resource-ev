@@ -44,26 +44,30 @@ class ChronosForecaster(Forecaster):
         import torch
 
         pipe = self._pipeline()
+        h = test.horizon
         y = test.frame[test.target_col].to_numpy(dtype=float)
         inputs = []
         for i in range(len(y)):
-            hist = y[max(0, i - self._ctx) : i]
-            if (
-                hist.size == 0
-            ):  # first row has no history; it sits in the context portion
+            end = max(0, i - h + 1)  # history available h steps before row i
+            hist = y[max(0, end - self._ctx) : end]
+            if hist.size == 0:  # first rows have no history; they sit in the context
                 hist = y[:1]
             inputs.append(torch.tensor(hist, dtype=torch.float32))
 
         quantiles, _means = pipe.predict_quantiles(  # type: ignore[attr-defined]
-            inputs, prediction_length=1, quantile_levels=[0.5]
+            inputs, prediction_length=h, quantile_levels=[0.5]
         )
-        # Bolt returns a stacked tensor [batch, h, q]; Chronos-2 a list of [h, q].
+        # Take the h-th forecast step (index h-1). Bolt returns a stacked tensor
+        # [batch, h, q]; Chronos-2 a list of [h, q].
         if isinstance(quantiles, list | tuple):
             point = np.array(
-                [float(np.asarray(q.detach().cpu()).reshape(-1)[0]) for q in quantiles]
+                [
+                    float(np.asarray(q.detach().cpu()).reshape(h, -1)[h - 1, 0])
+                    for q in quantiles
+                ]
             )
         else:
-            point = np.asarray(quantiles.detach().cpu())[:, 0, 0].astype(float)
+            point = np.asarray(quantiles.detach().cpu())[:, h - 1, 0].astype(float)
         return np.clip(point, 0.0, None)
 
 

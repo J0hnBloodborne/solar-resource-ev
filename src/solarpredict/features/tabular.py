@@ -24,41 +24,47 @@ def build_features(
     target: str = "y",
     series_col: str = "unique_id",
     covariates: tuple[str, ...] = SAFE_COVARIATES,
+    horizon: int = 1,
 ) -> tuple[pd.DataFrame, list[str]]:
     """Return ``(frame_with_features, feature_columns)``.
 
-    Lag/rolling features are shifted so each row only sees information up to t-1;
-    cyclical-time and clear-sky GHI are deterministic at t. Warm-up rows with NaN
-    features are dropped.
+    Lag/rolling features are shifted so each row only sees information available at
+    the forecast origin, i.e. ``horizon`` steps before t (horizon=1 is hour-ahead,
+    24 is day-ahead); cyclical-time and clear-sky GHI are deterministic at t and
+    stay usable at any horizon. Warm-up rows with NaN features are dropped.
     """
     df = prepared.sort_values("ds").reset_index(drop=True).copy()
     features: list[str] = []
+    extra = horizon - 1  # push every autoregressive lag past the forecast gap
 
     for lag in GHI_LAGS:
-        col = f"ghi_lag_{lag}"
-        df[col] = df.groupby(series_col)[target].shift(lag)
+        col = f"ghi_lag_{lag + extra}"
+        df[col] = df.groupby(series_col)[target].shift(lag + extra)
         features.append(col)
 
     for cov in covariates:
         if cov not in df.columns:
             continue
         for lag in COV_LAGS:
-            col = f"{cov}_lag_{lag}"
-            df[col] = df.groupby(series_col)[cov].shift(lag)
+            col = f"{cov}_lag_{lag + extra}"
+            df[col] = df.groupby(series_col)[cov].shift(lag + extra)
             features.append(col)
 
     for window in ROLL_WINDOWS:
         mean_col, std_col = f"ghi_roll_mean_{window}", f"ghi_roll_std_{window}"
         grouped = df.groupby(series_col)[target]
         df[mean_col] = grouped.transform(
-            lambda s, w=window: s.rolling(w).mean().shift(1)
+            lambda s, w=window: s.rolling(w).mean().shift(horizon)
         )
-        df[std_col] = grouped.transform(lambda s, w=window: s.rolling(w).std().shift(1))
+        df[std_col] = grouped.transform(
+            lambda s, w=window: s.rolling(w).std().shift(horizon)
+        )
         features += [mean_col, std_col]
 
     if "clear_sky_index" in df.columns:
-        df["kt_lag_1"] = df.groupby(series_col)["clear_sky_index"].shift(1)
-        features.append("kt_lag_1")
+        col = f"kt_lag_{horizon}"
+        df[col] = df.groupby(series_col)["clear_sky_index"].shift(horizon)
+        features.append(col)
     if "clearsky_ghi" in df.columns:  # deterministic at t — safe to use directly
         features.append("clearsky_ghi")
 

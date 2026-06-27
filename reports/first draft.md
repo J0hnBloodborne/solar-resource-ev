@@ -6,9 +6,10 @@ named so it can be traced to a run. It is written for a reader fluent in time-se
 forecasting and PV, and it states what was done and what came out.
 
 The work has two parts. The first compares machine-learning models at predicting global
-horizontal irradiance (GHI) one hour ahead, and converts the forecast to PV power. The
-second ranks locations by solar suitability and identifies good sites for solar-powered EV
-charging, between cities and within one city (Karachi).
+horizontal irradiance (GHI), at one-hour and day-ahead horizons, and converts the forecast to
+PV power. The second ranks locations by solar suitability and identifies good sites for
+solar-powered EV charging, between cities and within one city (Karachi), and gives the
+climatological expectation used to size an array beyond the forecast horizon.
 
 ---
 
@@ -304,6 +305,52 @@ NHITS from day one and switch to a trained tree after roughly a year of local da
 accumulated. For a solar-EV operator rolling out chargers into cities with no local
 forecasting history, that means a usable forecast on day one without waiting to collect a
 training set.
+
+### 3.6 The day-ahead horizon
+
+Everything above is hour-ahead. A charging operator schedules against the next day, so we
+reran the full lineup at a 24-hour lead on the same Karachi split. Day-ahead is a different
+problem: the autoregressive features now use only data from 24 hours back or earlier, and the
+reference is day-ahead smart persistence (yesterday's clear-sky index carried forward).
+Source: `reports/benchmark_dayahead_karachi.csv`. The table gives skill and RMSE at both
+horizons, sorted by day-ahead skill.
+
+| Model | Tier | Skill t+1 | Skill t+24 | RMSE t+1 | RMSE t+24 |
+|---|---|---|---|---|---|
+| catboost | classical ML | 0.400 | **0.169** | 41.8 | 77.6 |
+| extra_trees | classical ML | 0.402 | 0.161 | 41.6 | 78.3 |
+| chronos2 | foundation | 0.301 | 0.157 | 48.6 | 78.7 |
+| random_forest | classical ML | 0.360 | 0.149 | 44.5 | 79.3 |
+| ridge | classical ML | 0.251 | 0.145 | 52.2 | 79.7 |
+| lstm | deep learning | 0.253 | 0.138 | 52.0 | 80.4 |
+| xgboost | classical ML | 0.378 | 0.127 | 43.3 | 81.5 |
+| climatology | naive | −0.183 | 0.123 | 82.3 | 81.8 |
+| lightgbm | classical ML | 0.367 | 0.121 | 44.0 | 82.0 |
+| nhits | deep learning | 0.337 | 0.081 | 46.1 | 85.8 |
+| persistence | naive | −0.986 | 0.006 | 138.2 | 92.8 |
+| smart_persistence | reference | 0.000 | 0.000 | 69.6 | 93.3 |
+
+![GHI forecast skill by horizon, Karachi](figures/fig13_horizon_skill.png)
+
+**What this shows.** Skill collapses by roughly two and a half times, from 0.40 at one hour to
+0.17 at a day, and the absolute error nearly doubles (the best model goes from 42 to 78 W/m²
+RMSE, and the reference itself degrades from 70 to 93). This is the predictability decay
+quantified: one hour ahead the cloud field has barely moved and the clear-sky-index
+persistence is hard to beat by much; a day ahead it has been replaced entirely, so the
+learnable headroom is small for everyone. Day-ahead GHI is genuinely hard, and these numbers
+are the honest picture of it.
+
+The more interesting effect is that the ranking compresses and partly reorders. At one hour
+the trees lead Chronos-2 by 0.10 skill; at a day the top six models sit within 0.12 to 0.17
+and Chronos-2 climbs from seventh to third, effectively tied with the best trees. The
+zero-shot foundation model holds its ground better than the trained trees as the horizon
+lengthens, which is the same behaviour as the data-efficiency result in §3.5: it does
+relatively well exactly where the learnable signal is thin. Climatology makes the other
+notable move, from the worst non-persistence model at one hour (−0.18) to mid-pack at a day
+(0.12, above LightGBM and NHITS), because once cloud persistence is gone the seasonal mean is
+nearly as informative as a trained model. That crossover is also the bridge to the planning
+product in §5.10: past the forecasting horizon, the climatological expectation is what is
+left, and it is already competitive at 24 hours.
 
 ---
 
@@ -605,6 +652,46 @@ built-up district on the northern or coastal fringe, size the canopy to the summ
 floor with a battery or grid buffer for the spring surplus, and expect on the order of 0.8
 kWh per m² of array per day delivered after thermal losses.
 
+### 5.10 Expected solar for any future day
+
+A charger is planned months ahead, but the weather on a specific future date is not
+predictable. Atmospheric predictability runs out at about two weeks, so no model gives the
+GHI on a date next March; that part of the question has no forecast answer. The planning
+input instead is the climatological expectation: from the five-year record, the expected
+daily solar energy for each day of the year and its spread across years. This is an expected
+value with uncertainty bands, which is what an array is actually sized against. Daily
+insolation here is the hourly GHI integrated over the day (kWh/m²/day, equivalently peak sun
+hours). Source: `reports/climatology_daily_karachi.csv` and
+`reports/climatology_monthly_karachi.csv`.
+
+![Expected daily solar energy by day of year, Karachi](figures/fig12_climatology.png)
+
+| Month | Mean daily (kWh/m²) | P10 daily | P90 daily | Expected delivered PV (kWh/m²/month) |
+|---|---|---|---|---|
+| Jan | 4.37 | 4.01 | 4.84 | 19.5 |
+| Feb | 5.16 | 4.64 | 5.66 | 20.8 |
+| Mar | 6.09 | 5.44 | 6.72 | 27.2 |
+| Apr | 6.77 | 5.95 | 7.20 | 29.2 |
+| May | 7.01 | 6.67 | 7.36 | 31.3 |
+| Jun | 6.11 | 5.11 | 7.08 | 26.4 |
+| Jul | 4.96 | 3.67 | 6.03 | 22.1 |
+| Aug | 4.60 | 3.27 | 5.76 | 20.5 |
+| Sep | 5.22 | 4.10 | 6.09 | 22.5 |
+| Oct | 5.23 | 4.72 | 5.74 | 23.3 |
+| Nov | 4.55 | 4.18 | 4.94 | 19.7 |
+| Dec | 4.07 | 3.84 | 4.28 | 18.2 |
+
+**What this shows.** The expected day peaks in the pre-monsoon spring (about 7.0 kWh/m²/day
+in May) and bottoms in winter (about 4.1 in December), with the median day ranging from 4.1
+to 7.2 across the year. The band carries the planning content the mean alone hides: the
+monsoon months are not just dimmer, they are far more uncertain. July and August span roughly
+3.3 to 6.0 kWh/m²/day between the P10 and P90 years, while December sits in a tight 3.8 to 4.3
+band. For a charger that means the monsoon is the binding case twice over, low expected energy
+and wide year-to-year variance, so the array and any storage are sized to the monsoon P10 day
+(about 3.3 kWh/m², near 0.48 kWh/m²/day delivered) rather than to the annual mean. The width
+of the band at each date is, in effect, the grid or battery capacity the operator has to hold
+in reserve to keep throughput flat through a bad monsoon year.
+
 ---
 
 ## 6. Reproducibility and engineering
@@ -634,9 +721,11 @@ the whole set regenerates with no network.
 - ERA5 is a reanalysis at a ~25 km effective scale. It resolves the regional resource and
   the coastal gradient but not sub-cell microclimate, so the intra-city differences are
   small (~5%) and the within-city work is a ranking of coarse cells, not of neighbourhoods.
-- One hour ahead is the easy horizon. Day-ahead skill would be materially lower because the
-  clear-sky-index persistence the models exploit decays with lead time, so these numbers
-  should not be read as day-ahead performance.
+- One hour ahead is the easy horizon. Day-ahead skill is much lower (§3.6 measures it: about
+  0.17 versus 0.40), because the clear-sky-index persistence the models exploit decays with
+  lead time. The hour-ahead numbers should not be read as day-ahead performance. Beyond about
+  two weeks no forecast is possible, and the planning input becomes the climatological
+  expectation in §5.10.
 - The reanalysis is internally consistent and physically sensible but is not validated
   against a local pyranometer.
 - The PV conversion is first-order (linear in GHI plus a NOCT temperature derate). It is
@@ -667,6 +756,8 @@ Figures (`reports/figures/`):
 | 9 | fig9_seasonal_sites | Site by season GHI and suitability |
 | 10 / 10b | fig10_multicity_skill / fig10b_..._rmse | GHI benchmark across cities |
 | 11 / 11b | fig11_temp_skill / fig11b_..._rmse | Temperature model comparison |
+| 12 | fig12_climatology | Expected daily solar by day of year, P10-P90 |
+| 13 / 13b | fig13_horizon_skill / fig13b_dayahead_skill | Hour-ahead vs day-ahead skill |
 
 Tables (`reports/`):
 
@@ -675,9 +766,12 @@ Tables (`reports/`):
 | benchmark_karachi.csv | Karachi GHI benchmark, all metrics |
 | benchmark_multicity.csv | GHI benchmark for all 7 cities |
 | benchmark_temp_karachi.csv | Karachi temperature benchmark |
+| benchmark_dayahead_karachi.csv | Karachi day-ahead (t+24) benchmark |
 | data_efficiency_karachi.csv | Skill vs training size |
 | city_summary.csv | Per-city yield and seasonality |
 | site_suitability_karachi.csv | Within-city suitability ranking |
 | seasonal_site_suitability_karachi.csv | Site by season |
 | temp_derating_karachi.csv | PV heat loss by site |
+| climatology_daily_karachi.csv | Expected daily solar by day of year |
+| climatology_monthly_karachi.csv | Expected monthly solar energy |
 | karachi_grid_ghi.csv | District GHI grid points |

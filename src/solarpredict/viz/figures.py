@@ -501,6 +501,38 @@ def seasonal_site_heatmap(
     return _save(fig, path)
 
 
+def horizon_comparison_bar(
+    near: pd.DataFrame,
+    far: pd.DataFrame,
+    *,
+    path: str | Path,
+    near_label: str = "hour-ahead (t+1)",
+    far_label: str = "day-ahead (t+24)",
+    title: str = "GHI forecast skill by horizon (Karachi)",
+) -> Path:
+    """Grouped bars of each model's skill at two horizons, ordered by the near one."""
+    merged = (
+        near[["model", "tier", "skill"]]
+        .merge(far[["model", "skill"]], on="model", suffixes=("_near", "_far"))
+        .sort_values("skill_near", ascending=False)
+    )
+    x = np.arange(len(merged))
+    width = 0.38
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.bar(
+        x - width / 2, merged["skill_near"], width, label=near_label, color="#1f77b4"
+    )
+    ax.bar(x + width / 2, merged["skill_far"], width, label=far_label, color="#d62728")
+    ax.set_xticks(x)
+    ax.set_xticklabels(merged["model"], rotation=45, ha="right")
+    ax.axhline(0, color="black", lw=0.6)
+    ax.set_ylabel("Forecast skill vs persistence at that horizon")
+    ax.set_xlabel("Model")
+    ax.set_title(title)
+    ax.legend()
+    return _save(fig, path)
+
+
 _MONTH_STARTS = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335]
 _MONTH_LABELS = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"]
 _PV_DELIVERED = 0.20 * 0.80 * 0.90
@@ -513,7 +545,11 @@ def climatology_band(
     years. A right axis reads the same curve as delivered PV energy per m²."""
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.fill_between(
-        df["doy"], df["p10"], df["p90"], alpha=0.25, color="#d9a441",
+        df["doy"],
+        df["p10"],
+        df["p90"],
+        alpha=0.25,
+        color="#d9a441",
         label="P10-P90 across years",
     )
     ax.plot(df["doy"], df["p50"], color="#d62728", lw=1.6, label="median day")

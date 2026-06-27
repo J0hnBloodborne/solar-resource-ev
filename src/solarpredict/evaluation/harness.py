@@ -45,8 +45,14 @@ def run_benchmark(
     day_mask_col: str = "is_day",
     target: str = "y",
     context: int = CONTEXT_ROWS,
+    horizon: int = 1,
 ) -> BenchmarkResult:
-    """Fit/score each model; return metrics table + predictions on the test set."""
+    """Fit/score each model; return metrics table + predictions on the test set.
+
+    ``horizon`` is the forecast lead in steps (1 = hour-ahead, 24 = day-ahead); it is
+    carried on the ``ForecastData`` so each adapter shifts/forecasts accordingly. The
+    tabular feature columns must be built with the matching horizon upstream.
+    """
     ordered = prepared.sort_values("ds").reset_index(drop=True)
     if split is None:
         split = chronological_split(ordered)
@@ -55,8 +61,12 @@ def run_benchmark(
     i_test = len(ordered) - n_test
     test_ctx = ordered.iloc[max(0, i_test - context) :].reset_index(drop=True)
 
-    train_data = ForecastData(frame=split.train, covariate_cols=covariate_cols)
-    test_data = ForecastData(frame=test_ctx, covariate_cols=covariate_cols)
+    train_data = ForecastData(
+        frame=split.train, covariate_cols=covariate_cols, horizon=horizon
+    )
+    test_data = ForecastData(
+        frame=test_ctx, covariate_cols=covariate_cols, horizon=horizon
+    )
 
     y_true = test_ctx[target].to_numpy(dtype=float)[-n_test:]
     test_ds = test_ctx["ds"].to_numpy()[-n_test:]
